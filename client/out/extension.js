@@ -40,34 +40,48 @@ const vscode_1 = require("vscode");
 const node_1 = require("vscode-languageclient/node");
 let client;
 function activate(context) {
-    // Determine the path to the Python server script
+    // 1. Create the output channel immediately so it appears in the dropdown
+    const outputChannel = vscode_1.window.createOutputChannel('Axon Language Server');
+    outputChannel.appendLine('Axon Extension Activating...');
+    // 2. Path to the python server script
     const serverScript = context.asAbsolutePath(path.join('server', 'axon_lsp', 'server.py'));
-    // Define how to start the Python Language Server.
-    // We use the standard output/input streams for JSON-RPC communication.
+    const pythonCommand = process.platform === 'win32' ? 'python' : 'python3';
+    // 3. Server options: how to launch the python process
     const serverOptions = {
-        command: "python3", // Note: In a production extension, you might want to resolve the user's active Python environment.
+        command: pythonCommand,
         args: [serverScript],
-        transport: node_1.TransportKind.stdio
-    };
-    // Options to control the language client
-    const clientOptions = {
-        // Register the server for Axon documents (.axon, .trio)
-        documentSelector: [{ scheme: 'file', language: 'axon' }],
-        synchronize: {
-            // Notify the server about file changes to '.axon' files contained in the workspace
-            fileEvents: vscode_1.workspace.createFileSystemWatcher('**/*.axon')
+        transport: node_1.TransportKind.stdio,
+        options: {
+            env: {
+                ...process.env,
+                PYTHONUNBUFFERED: "1" // Ensures logs aren't delayed by python's buffer
+            }
         }
     };
-    // Create the language client and start the client.
+    // 4. Client options: which files to watch and where to log
+    const clientOptions = {
+        // Must match the language ID in package.json
+        documentSelector: [
+            { scheme: 'file', language: 'axon' }
+        ],
+        synchronize: {
+            // Notify the server about file changes in the workspace
+            fileEvents: vscode_1.workspace.createFileSystemWatcher('**/{*.axon,*.trio}')
+        },
+        outputChannel: outputChannel,
+        traceOutputChannel: vscode_1.window.createOutputChannel('Axon LSP Trace')
+    };
+    // 5. Create and start the client
     client = new node_1.LanguageClient('axonLspClient', 'Axon Language Server', serverOptions, clientOptions);
-    // Start the client. This will also launch the server process.
-    client.start();
+    outputChannel.appendLine('Starting Language Client...');
+    client.start().catch(err => {
+        outputChannel.appendLine(`Failed to start client: ${err}`);
+    });
 }
 function deactivate() {
     if (!client) {
         return undefined;
     }
-    // Ensure we gracefully shut down the language server when VS Code closes
     return client.stop();
 }
 //# sourceMappingURL=extension.js.map

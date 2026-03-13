@@ -10,6 +10,16 @@
   "categories": [
     "Programming Languages"
   ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "axon",
+        "aliases": ["Axon", "axon"],
+        "extensions": [".axon", ".trio"],
+        "configuration": "./language-configuration.json"
+      }
+    ]
+  },
   "activationEvents": [
     "onLanguage:axon"
   ],
