@@ -18,7 +18,7 @@ export function activate(context: ExtensionContext) {
     // Define how to start the Python Language Server.
     // We use the standard output/input streams for JSON-RPC communication.
     const serverOptions: ServerOptions = {
-        command: "python", // Note: In a production extension, you might want to resolve the user's active Python environment.
+        command: "python3", // Note: In a production extension, you might want to resolve the user's active Python environment.
         args: [serverScript],
         transport: TransportKind.stdio
     };

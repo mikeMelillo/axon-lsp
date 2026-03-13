@@ -3,44 +3,26 @@
   "displayName": "Axon Language Support",
   "description": "LSP and Syntax Highlighting for the Axon programming language",
   "version": "0.1.0",
+  "publisher": "mike",
   "engines": {
     "vscode": "^1.80.0"
   },
   "categories": [
-    "Programming Languages",
-    "Linters",
-    "Snippets"
+    "Programming Languages"
   ],
   "activationEvents": [
     "onLanguage:axon"
   ],
   "main": "./client/out/extension.js",
-  "contributes": {
-    "languages": [
-      {
-        "id": "axon",
-        "aliases": [
-          "Axon",
-          "axon"
-        ],
-        "extensions": [
-          ".axon",
-          ".trio"
-        ],
-        "configuration": "./language-configuration.json"
-      }
-    ],
-    "grammars": [
-      {
-        "language": "axon",
-        "scopeName": "source.axon",
-        "path": "./syntaxes/axon.tmLanguage.json"
-      }
-    ]
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./client",
+    "watch": "tsc -watch -p ./client",
+    "postinstall": "npm install --prefix client"
   },
-  "dependencies": {
-    "path": "^0.12.7",
-    "vscode": "^1.1.37",
-    "vscode-languageclient": "^9.0.1"
+  "devDependencies": {
+    "@types/node": "^16.11.7",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.1.6"
   }
 }
