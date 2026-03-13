@@ -1,0 +1,71 @@
+{
+  "name": "Axon",
+  "patterns": [
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#refs"
+    },
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#numbers"
+    }
+  ],
+  "repository": {
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.axon",
+          "match": "\\b(if|else|do|end|return|catch|throw|try)\\b"
+        },
+        {
+          "name": "keyword.declaration.axon",
+          "match": "\\b(def)\\b"
+        },
+        {
+          "name": "constant.language.axon",
+          "match": "\\b(true|false|null|na|m)\\b"
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.axon",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.axon",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "refs": {
+      "name": "entity.name.tag.axon",
+      "match": "@[a-zA-Z0-9_\\-]+"
+    },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.axon",
+          "begin": "/\\*",
+          "end": "\\*/"
+        },
+        {
+          "name": "comment.line.double-slash.axon",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "numbers": {
+      "name": "constant.numeric.axon",
+      "match": "\\b[0-9]+(\\.[0-9]+)?([a-zA-Z]+|%)?\\b"
+    }
+  },
+  "scopeName": "source.axon"
+}

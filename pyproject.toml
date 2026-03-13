@@ -1,0 +1,10 @@
+[project]
+name = "axon-lsp"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "lsprotocol>=2025.0.0",
+    "pygls>=2.0.1",
+]
