@@ -4,6 +4,5 @@
   "private": true,
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
-  },
-  "repository": "https://github.com/mikeMelillo/axon-lsp"
+  }
 }
