@@ -1,6 +1,6 @@
 {
   "name": "axon-lsp",
-  "displayName": "Axon Language Support",
+  "displayName": "Axon LSP (Project Haystack)",
   "description": "LSP and Syntax Highlighting for the Axon programming language",
   "version": "0.1.0",
   "publisher": "mikeMelillo",
