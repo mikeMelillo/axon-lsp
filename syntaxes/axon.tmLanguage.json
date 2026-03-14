@@ -26,7 +26,7 @@
         },
         {
           "name": "keyword.declaration.axon",
-          "match": "\\b(def)\\b"
+          "match": "\\b(def|defcomp)\\b"
         },
         {
           "name": "constant.language.axon",
