@@ -17,3 +17,6 @@ pyproject.toml
 uv.lock
 .python-version
 build/
+sample_files/
+haxall/
+.env

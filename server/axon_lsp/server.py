@@ -1,9 +1,10 @@
 import sys
 import os
 import re
+import json
 import logging
-import pickle
-import subprocess
+# import pickle
+# import subprocess
 from typing import Dict, List, Optional
 
 try:
@@ -186,10 +187,10 @@ class TrioParser:
                             params_list = []
                         return_type = None
 
-                    if return_type:
-                        detail = f"{name}{args_str} // -> {return_type}"
-                    else:
-                        detail = f"{name}{args_str}"
+                    # if return_type:
+                    #     detail = f"{name}{args_str} // -> {return_type}"
+                    # else:
+                    #     detail = f"{name}{args_str}"
 
                     found_funcs[name] = {
                         "name": name,
@@ -256,473 +257,67 @@ class TrioParser:
 
 
 class NamespaceManager:
-    def __init__(self, settings: Optional[Dict] = None):
-        settings = settings if settings else {}
+    def __init__(self):
         self.core_funcs: Dict[str, dict] = {}
         self.external_funcs: Dict[str, dict] = {}
         self.local_funcs: Dict[str, dict] = {}
         self.references_map: Dict[str, List[Location]] = {}
-        self._cache_dir = os.path.join(os.path.expanduser("~"), ".axon_lsp_cache")
-        self._cache_file = os.path.join(self._cache_dir, f"core_index_v{VERSION}.pkl")
 
-        # Get paths from settings or use defaults
-        haxall_paths = settings.haxallPaths
-        self.haxall_path = haxall_paths[0] if haxall_paths else ""
-        self.external_paths = settings.externalPaths
-
-        self.current_cache_id = self._generate_cache_id()
+        # Load static core functions from bundled backstop
         self._load_core()
-        self._load_external_libraries()
-
-    def _generate_cache_id(self) -> str:
-        if not self.haxall_path or not os.path.exists(self.haxall_path):
-            return "minimal-fallback"
-        try:
-            git_dir = os.path.join(self.haxall_path, ".git")
-            if os.path.exists(git_dir):
-                commit = (
-                    subprocess.check_output(
-                        ["git", "rev-parse", "HEAD"],
-                        cwd=self.haxall_path,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    .decode()
-                    .strip()
-                )
-                return f"git-{commit}"
-        except Exception:
-            pass
-        try:
-            mtime = os.path.getmtime(self.haxall_path)
-            return f"path-{self.haxall_path}-{mtime}"
-        except Exception:
-            return "unknown-env"
 
     def _load_core(self):
-        if os.path.exists(self._cache_file):
-            logger.info(f"Trying to read cache file: {self._cache_file}")
-            try:
-                with open(self._cache_file, "rb") as f:
-                    cache_data = pickle.load(f)
-                cached_id = cache_data.get("cache_id")
-                if (
-                    cached_id == self.current_cache_id
-                    and cached_id != "minimal-fallback"
-                ):
-                    self.core_funcs = cache_data.get("functions", {})
-                    logger.info(
-                        f"Core Cache hit [{cached_id}]: {len(self.core_funcs)} functions."
-                    )
-                    self._apply_default_backstop()
-                    return
-            except Exception as e:
-                logger.error(f"Failed to load cache: {e}")
-
-        if (
-            self.haxall_path
-            and os.path.exists(self.haxall_path)
-            and self.current_cache_id != "minimal-fallback"
-        ):
-            logger.info(f"Indexing Haxall Repo at {self.haxall_path}")
-            trio_count = 0
-            fan_count = 0
-            for root, _, files in os.walk(self.haxall_path):
-                for file in files:
-                    path = os.path.join(root, file)
-                    if file.endswith(".trio"):
-                        self.core_funcs.update(TrioParser.parse_file(path))
-                        trio_count += 1
-                    elif file.endswith(".fan"):
-                        result = FantomParser.parse_file(path)
-                        if result:
-                            logger.debug(f"  .fan file: {path} -> {len(result)} funcs")
-                        self.core_funcs.update(result)
-                        fan_count += 1
-            logger.info(
-                f"Indexed {len(self.core_funcs)} core functions ({trio_count} trio, {fan_count} fan)"
-            )
-            self._save_cache()
-        else:
-            for s in ["read", "readAll", "hisRead", "hisWrite", "filter", "map", "now"]:
-                self.core_funcs[s] = {
-                    "name": s,
-                    "doc": "Fallback",
-                    "args_str": "()",
-                    "params": [],
-                    "kind": CompletionItemKind.Method,
-                    "location": None,
-                }
-
+        # Load from static backstop file (shipped with extension)
         self._apply_default_backstop()
+        logger.info(
+            f"Loaded {len(self.core_funcs)} core functions from static backstop"
+        )
 
     def _apply_default_backstop(self):
-        """Apply default backstop functions - can be overridden by external/local libs."""
-        default_funcs = {
-            "read": {
-                "name": "read",
-                "doc": "Read records from database",
-                "args_str": "(filter)",
-                "params": ["filter"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "readAll": {
-                "name": "readAll",
-                "doc": "Read all records",
-                "args_str": "()",
-                "params": [],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "hisRead": {
-                "name": "hisRead",
-                "doc": "Read history data",
-                "args_str": "(id, range)",
-                "params": ["id", "range"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "hisWrite": {
-                "name": "hisWrite",
-                "doc": "Write history data",
-                "args_str": "(id, items)",
-                "params": ["id", "items"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "filter": {
-                "name": "filter",
-                "doc": "Filter records",
-                "args_str": "(filter)",
-                "params": ["filter"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "map": {
-                "name": "map",
-                "doc": "Map/transform records",
-                "args_str": "(fn)",
-                "params": ["fn"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "each": {
-                "name": "each",
-                "doc": "Iterate over records",
-                "args_str": "(fn)",
-                "params": ["fn"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "now": {
-                "name": "now",
-                "doc": "Get current time",
-                "args_str": "()",
-                "params": [],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "today": {
-                "name": "today",
-                "doc": "Get today's date",
-                "args_str": "()",
-                "params": [],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "yesterday": {
-                "name": "yesterday",
-                "doc": "Get yesterday's date",
-                "args_str": "()",
-                "params": [],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "find": {
-                "name": "find",
-                "doc": "Find first match",
-                "args_str": "(fn)",
-                "params": ["fn"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "findAll": {
-                "name": "findAll",
-                "doc": "Find all matches",
-                "args_str": "(fn)",
-                "params": ["fn"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "first": {
-                "name": "first",
-                "doc": "Get first element",
-                "args_str": "()",
-                "params": [],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "last": {
-                "name": "last",
-                "doc": "Get last element",
-                "args_str": "()",
-                "params": [],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "size": {
-                "name": "size",
-                "doc": "Get size",
-                "args_str": "()",
-                "params": [],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "isEmpty": {
-                "name": "isEmpty",
-                "doc": "Check if empty",
-                "args_str": "()",
-                "params": [],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "sort": {
-                "name": "sort",
-                "doc": "Sort records",
-                "args_str": "(fn?)",
-                "params": ["fn"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "distinct": {
-                "name": "distinct",
-                "doc": "Get distinct values",
-                "args_str": "(key?)",
-                "params": ["key"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "union": {
-                "name": "union",
-                "doc": "Union of grids",
-                "args_str": "(grid)",
-                "params": ["grid"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "intersect": {
-                "name": "intersect",
-                "doc": "Intersection of grids",
-                "args_str": "(grid)",
-                "params": ["grid"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "exclude": {
-                "name": "exclude",
-                "doc": "Exclude records",
-                "args_str": "(grid)",
-                "params": ["grid"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "groupBy": {
-                "name": "groupBy",
-                "doc": "Group by key",
-                "args_str": "(key)",
-                "params": ["key"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "rollup": {
-                "name": "rollup",
-                "doc": "Rollup records",
-                "args_str": "(fn)",
-                "params": ["fn"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "col": {
-                "name": "col",
-                "doc": "Get column",
-                "args_str": "(name)",
-                "params": ["name"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "cols": {
-                "name": "cols",
-                "doc": "Get all columns",
-                "args_str": "()",
-                "params": [],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "addCol": {
-                "name": "addCol",
-                "doc": "Add column",
-                "args_str": "(name, fn)",
-                "params": ["name", "fn"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "renameCol": {
-                "name": "renameCol",
-                "doc": "Rename column",
-                "args_str": "(oldName, newName)",
-                "params": ["oldName", "newName"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "removeCol": {
-                "name": "removeCol",
-                "doc": "Remove column",
-                "args_str": "(name)",
-                "params": ["name"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "meta": {
-                "name": "meta",
-                "doc": "Get metadata",
-                "args_str": "()",
-                "params": [],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "setMeta": {
-                "name": "setMeta",
-                "doc": "Set metadata",
-                "args_str": "(dict)",
-                "params": ["dict"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "toGrid": {
-                "name": "toGrid",
-                "doc": "Convert to grid",
-                "args_str": "()",
-                "params": [],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "toJson": {
-                "name": "toJson",
-                "doc": "Convert to JSON",
-                "args_str": "()",
-                "params": [],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "toXml": {
-                "name": "toXml",
-                "doc": "Convert to XML",
-                "args_str": "()",
-                "params": [],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "toCsv": {
-                "name": "toCsv",
-                "doc": "Convert to CSV",
-                "args_str": "()",
-                "params": [],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "dict": {
-                "name": "dict",
-                "doc": "Create dictionary",
-                "args_str": "(key, val, ...)",
-                "params": ["key", "val"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "list": {
-                "name": "list",
-                "doc": "Create list",
-                "args_str": "(item, ...)",
-                "params": ["item"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "grid": {
-                "name": "grid",
-                "doc": "Create grid",
-                "args_str": "(rows)",
-                "params": ["rows"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-            "eval": {
-                "name": "eval",
-                "doc": "Evaluate expression",
-                "args_str": "(expr)",
-                "params": ["expr"],
-                "kind": CompletionItemKind.Function,
-                "location": None,
-            },
-        }
+        """Load functions from bundled JSON cache."""
+        cache_path = os.path.join(os.path.dirname(__file__), "function_cache.json")
 
-        # Load default functions from sample_files/coreFuncs.trio
-        default_trio_path = os.path.join(
-            os.path.dirname(__file__), "..", "..", "sample_files", "coreFuncs.trio"
-        )
-        if os.path.exists(default_trio_path):
-            default_funcs = TrioParser.parse_file(default_trio_path)
-            logger.info(
-                f"Loaded {len(default_funcs)} default backstop functions from {default_trio_path}"
-            )
-            for name, func in default_funcs.items():
-                if name not in self.core_funcs:
-                    self.core_funcs[name] = func
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, "r") as f:
+                    func_list = json.load(f)
+
+                for func in func_list:
+                    name = func.get("name")
+                    kind_val = func.get("kind")
+                    if isinstance(kind_val, int):
+                        kind_val = CompletionItemKind(kind_val)
+                    if name:
+                        loc_uri = func.get("location", {}).get("uri")
+                        if loc_uri == "axon-ext://coreFuncs.trio":
+                            # Resolve to actual extension path
+                            ext_path = os.path.join(os.path.dirname(__file__), "..", "coreFuncs.trio")
+                            loc_uri = f"file://{ext_path}"
+                        # Reconstruct function dict with proper types
+                        self.core_funcs[name] = {
+                            "name": name,
+                            "doc": func.get("doc", ""),
+                            "args_str": func.get("args_str", "()"),
+                            "params": func.get("params", []),
+                            "kind": kind_val,
+                            "location": {"uri": loc_uri} if loc_uri else None,
+                        }
+                logger.info(f"Loaded {len(self.core_funcs)} functions from cache")
+            except Exception as e:
+                logger.warning(f"Failed to load cache: {e}")
         else:
-            logger.warning(f"Default backstop file not found: {default_trio_path}")
-            for name, func in default_funcs.items():
-                if name not in self.core_funcs:
-                    self.core_funcs[name] = func
+            logger.warning(f"Cache file not found: {cache_path}")
 
-    def _load_external_libraries(self):
-        """Indexes libraries provided in externalPaths setting."""
-        self.external_funcs = {}
-        logger.info(f"Checking external paths: {self.external_paths}")
-        valid_paths = [p for p in self.external_paths if os.path.exists(p)]
-        if not valid_paths:
-            return
-
-        logger.info(f"Indexing External Libraries: {valid_paths}")
-        for path in valid_paths:
-            for root, _, files in os.walk(path):
-                for file in files:
-                    full_path = os.path.join(root, file)
-                    if file.endswith((".trio", ".axon")):
-                        self.external_funcs.update(TrioParser.parse_file(full_path))
-                    elif file.endswith(".fan"):
-                        self.external_funcs.update(FantomParser.parse_file(full_path))
-        logger.info(f"Indexed {len(self.external_funcs)} external library functions.")
-
-    def _save_cache(self):
-        try:
-            os.makedirs(self._cache_dir, exist_ok=True)
-            cache_data = {
-                "cache_id": self.current_cache_id,
-                "functions": self.core_funcs,
-            }
-            with open(self._cache_file, "wb") as f:
-                pickle.dump(cache_data, f)
-        except Exception as e:
-            logger.error(f"Save cache failed: {e}")
+    def add_reference(self, name: str, location: Location):
+        if name not in self.references_map:
+            self.references_map[name] = []
+        self.references_map[name].append(location)
 
     def clear_references_for_uri(self, uri: str):
         for name in list(self.references_map.keys()):
             self.references_map[name] = [
                 loc for loc in self.references_map[name] if loc.uri != uri
             ]
-
-    def add_reference(self, name: str, location: Location):
-        if name not in self.references_map:
-            self.references_map[name] = []
-        self.references_map[name].append(location)
 
     def update_local_index(self, workspace_root: str):
         logger.info(f"Scanning workspace: {workspace_root}")
@@ -850,38 +445,9 @@ def on_initialized(ls: LanguageServer, params: InitializeParams):
     global manager
     logger.info("LSP Initialized - Loading Namespaces...")
 
-    # Get settings from initialization params
-    settings = {"haxallPaths": [], "externalPaths": []}
-    if hasattr(params, "initialization_options") and params.initialization_options:
-        settings = {
-            "haxallPaths": params.initialization_options.get("haxallPaths", []) or [],
-            "externalPaths": params.initialization_options.get("externalPaths", [])
-            or [],
-        }
-
-    manager = NamespaceManager(settings)
+    manager = NamespaceManager()
     if ls.workspace.root_path:
         manager.update_local_index(ls.workspace.root_path)
-
-
-@server.feature("axon/reloadSettings")
-def reload_settings(ls: LanguageServer, settings):
-    global manager
-    # Debug: log what we're receiving
-    logger.info(f"Raw settings received: {type(settings)} - {settings}")
-    logger.info(f"Settings dir: {[x for x in dir(settings) if not x.startswith('_')]}")
-    logger.info(f"External lib: {settings.externalPaths}")
-
-    # Extract settings - convert to list properly
-    haxall = list(settings.haxallPaths) if settings.haxallPaths else []
-    external = list(settings.externalPaths) if settings.externalPaths else []
-
-    settings_dict = {"haxallPaths": haxall, "externalPaths": external}
-    logger.info(f"Reloading settings: {settings_dict}")
-    manager = NamespaceManager(settings_dict)
-    if ls.workspace.root_path:
-        manager.update_local_index(ls.workspace.root_path)
-    logger.info("Settings reloaded successfully")
 
 
 @server.feature(TEXT_DOCUMENT_DID_OPEN)

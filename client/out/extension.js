@@ -58,14 +58,6 @@ function activate(context) {
             }
         }
     };
-    // Helper function to get current settings
-    function getSettings() {
-        const config = vscode_1.workspace.getConfiguration('axonLsp');
-        return {
-            haxallPaths: config.get('haxallPaths', []),
-            externalPaths: config.get('externalPaths', [])
-        };
-    }
     // 4. Client options: which files to watch and where to log
     const clientOptions = {
         // Must match the language ID in package.json
@@ -77,8 +69,7 @@ function activate(context) {
             fileEvents: vscode_1.workspace.createFileSystemWatcher('**/{*.axon,*.trio}')
         },
         outputChannel: outputChannel,
-        traceOutputChannel: vscode_1.window.createOutputChannel('Axon LSP Trace'),
-        initializationOptions: getSettings()
+        traceOutputChannel: vscode_1.window.createOutputChannel('Axon LSP Trace')
     };
     // 5. Create and start the client
     client = new node_1.LanguageClient('axonLspClient', 'Axon Language Server', serverOptions, clientOptions);
@@ -86,16 +77,6 @@ function activate(context) {
     client.start().catch(err => {
         outputChannel.appendLine(`Failed to start client: ${err}`);
     });
-    // 6. Listen for settings changes and notify server
-    context.subscriptions.push(vscode_1.workspace.onDidChangeConfiguration(() => {
-        outputChannel.appendLine('Settings changed, reloading...');
-        const settings = getSettings();
-        client.sendNotification('axon/reloadSettings', settings).then(() => {
-            outputChannel.appendLine('Settings reloaded successfully');
-        }).catch((err) => {
-            outputChannel.appendLine(`Failed to reload settings: ${err}`);
-        });
-    }));
 }
 function deactivate() {
     if (!client) {
