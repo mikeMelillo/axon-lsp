@@ -5,16 +5,18 @@ import logging
 import pickle
 import subprocess
 from typing import Dict, List, Optional
-from pygls.server import LanguageServer
+
+try:
+    from pygls.server import LanguageServer
+except ImportError:
+    from pygls import LanguageServer
 from lsprotocol.types import (
     TEXT_DOCUMENT_COMPLETION,
     TEXT_DOCUMENT_DID_SAVE,
     TEXT_DOCUMENT_DID_OPEN,
     TEXT_DOCUMENT_DID_CHANGE,
     TEXT_DOCUMENT_DEFINITION,
-    # TEXT_DOCUMENT_SIGNATURE_HELP,
     TEXT_DOCUMENT_HOVER,
-    # TEXT_DOCUMENT_REFERENCES,
     INITIALIZED,
     CompletionItem,
     CompletionItemKind,
@@ -28,12 +30,6 @@ from lsprotocol.types import (
     Position,
     Range,
     DefinitionParams,
-    # ReferenceParams,
-    # SignatureHelp,
-    # SignatureInformation,
-    # ParameterInformation,
-    # SignatureHelpParams,
-    # SignatureHelpOptions,
     Diagnostic,
     DiagnosticSeverity,
     Hover,
@@ -51,9 +47,6 @@ logging.basicConfig(
 logger = logging.getLogger("axon-lsp")
 
 VERSION = "0.1.4"
-HAXALL_REPO_PATH = "/home/mike/work/haxall-3.1.12/haxall"
-# Support for external libraries via environment variable (colon/semicolon separated)
-EXTERNAL_PATHS = "/home/mike/work/skyspark-sba-core".split(os.pathsep)
 
 
 class FantomParser:
@@ -263,7 +256,8 @@ class TrioParser:
 
 
 class NamespaceManager:
-    def __init__(self):
+    def __init__(self, settings: Optional[Dict] = None):
+        settings = settings if settings else {}
         self.core_funcs: Dict[str, dict] = {}
         self.external_funcs: Dict[str, dict] = {}
         self.local_funcs: Dict[str, dict] = {}
@@ -271,20 +265,25 @@ class NamespaceManager:
         self._cache_dir = os.path.join(os.path.expanduser("~"), ".axon_lsp_cache")
         self._cache_file = os.path.join(self._cache_dir, f"core_index_v{VERSION}.pkl")
 
+        # Get paths from settings or use defaults
+        haxall_paths = settings.haxallPaths
+        self.haxall_path = haxall_paths[0] if haxall_paths else ""
+        self.external_paths = settings.externalPaths
+
         self.current_cache_id = self._generate_cache_id()
         self._load_core()
         self._load_external_libraries()
 
     def _generate_cache_id(self) -> str:
-        if not HAXALL_REPO_PATH or not os.path.exists(HAXALL_REPO_PATH):
+        if not self.haxall_path or not os.path.exists(self.haxall_path):
             return "minimal-fallback"
         try:
-            git_dir = os.path.join(HAXALL_REPO_PATH, ".git")
+            git_dir = os.path.join(self.haxall_path, ".git")
             if os.path.exists(git_dir):
                 commit = (
                     subprocess.check_output(
                         ["git", "rev-parse", "HEAD"],
-                        cwd=HAXALL_REPO_PATH,
+                        cwd=self.haxall_path,
                         stderr=subprocess.DEVNULL,
                     )
                     .decode()
@@ -294,13 +293,14 @@ class NamespaceManager:
         except Exception:
             pass
         try:
-            mtime = os.path.getmtime(HAXALL_REPO_PATH)
-            return f"path-{HAXALL_REPO_PATH}-{mtime}"
+            mtime = os.path.getmtime(self.haxall_path)
+            return f"path-{self.haxall_path}-{mtime}"
         except Exception:
             return "unknown-env"
 
     def _load_core(self):
         if os.path.exists(self._cache_file):
+            logger.info(f"Trying to read cache file: {self._cache_file}")
             try:
                 with open(self._cache_file, "rb") as f:
                     cache_data = pickle.load(f)
@@ -319,14 +319,14 @@ class NamespaceManager:
                 logger.error(f"Failed to load cache: {e}")
 
         if (
-            HAXALL_REPO_PATH
-            and os.path.exists(HAXALL_REPO_PATH)
+            self.haxall_path
+            and os.path.exists(self.haxall_path)
             and self.current_cache_id != "minimal-fallback"
         ):
-            logger.info(f"Indexing Haxall Repo at {HAXALL_REPO_PATH}")
+            logger.info(f"Indexing Haxall Repo at {self.haxall_path}")
             trio_count = 0
             fan_count = 0
-            for root, _, files in os.walk(HAXALL_REPO_PATH):
+            for root, _, files in os.walk(self.haxall_path):
                 for file in files:
                     path = os.path.join(root, file)
                     if file.endswith(".trio"):
@@ -683,13 +683,14 @@ class NamespaceManager:
                     self.core_funcs[name] = func
 
     def _load_external_libraries(self):
-        """Indexes libraries provided in AXON_PATH."""
+        """Indexes libraries provided in externalPaths setting."""
         self.external_funcs = {}
-        valid_paths = [p for p in EXTERNAL_PATHS if p.strip() and os.path.exists(p)]
+        logger.info(f"Checking external paths: {self.external_paths}")
+        valid_paths = [p for p in self.external_paths if os.path.exists(p)]
         if not valid_paths:
             return
 
-        logger.info(f"Indexing External Libraries from AXON_PATH: {valid_paths}")
+        logger.info(f"Indexing External Libraries: {valid_paths}")
         for path in valid_paths:
             for root, _, files in os.walk(path):
                 for file in files:
@@ -848,9 +849,39 @@ class Validator:
 def on_initialized(ls: LanguageServer, params: InitializeParams):
     global manager
     logger.info("LSP Initialized - Loading Namespaces...")
-    manager = NamespaceManager()
+
+    # Get settings from initialization params
+    settings = {"haxallPaths": [], "externalPaths": []}
+    if hasattr(params, "initialization_options") and params.initialization_options:
+        settings = {
+            "haxallPaths": params.initialization_options.get("haxallPaths", []) or [],
+            "externalPaths": params.initialization_options.get("externalPaths", [])
+            or [],
+        }
+
+    manager = NamespaceManager(settings)
     if ls.workspace.root_path:
         manager.update_local_index(ls.workspace.root_path)
+
+
+@server.feature("axon/reloadSettings")
+def reload_settings(ls: LanguageServer, settings):
+    global manager
+    # Debug: log what we're receiving
+    logger.info(f"Raw settings received: {type(settings)} - {settings}")
+    logger.info(f"Settings dir: {[x for x in dir(settings) if not x.startswith('_')]}")
+    logger.info(f"External lib: {settings.externalPaths}")
+
+    # Extract settings - convert to list properly
+    haxall = list(settings.haxallPaths) if settings.haxallPaths else []
+    external = list(settings.externalPaths) if settings.externalPaths else []
+
+    settings_dict = {"haxallPaths": haxall, "externalPaths": external}
+    logger.info(f"Reloading settings: {settings_dict}")
+    manager = NamespaceManager(settings_dict)
+    if ls.workspace.root_path:
+        manager.update_local_index(ls.workspace.root_path)
+    logger.info("Settings reloaded successfully")
 
 
 @server.feature(TEXT_DOCUMENT_DID_OPEN)

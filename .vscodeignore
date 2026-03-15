@@ -12,7 +12,6 @@ tsconfig.json
 .venv
 __pycache__
 *.pyc
-sample_files
 ROADMAP.md
 pyproject.toml
 uv.lock

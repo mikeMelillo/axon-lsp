@@ -34,6 +34,15 @@ export function activate(context: ExtensionContext) {
         }
     };
 
+    // Helper function to get current settings
+    function getSettings() {
+        const config = workspace.getConfiguration('axonLsp');
+        return {
+            haxallPaths: config.get<string[]>('haxallPaths', []),
+            externalPaths: config.get<string[]>('externalPaths', [])
+        };
+    }
+
     // 4. Client options: which files to watch and where to log
     const clientOptions: LanguageClientOptions = {
         // Must match the language ID in package.json
@@ -45,7 +54,8 @@ export function activate(context: ExtensionContext) {
             fileEvents: workspace.createFileSystemWatcher('**/{*.axon,*.trio}')
         },
         outputChannel: outputChannel,
-        traceOutputChannel: window.createOutputChannel('Axon LSP Trace')
+        traceOutputChannel: window.createOutputChannel('Axon LSP Trace'),
+        initializationOptions: getSettings()
     };
 
     // 5. Create and start the client
@@ -60,6 +70,19 @@ export function activate(context: ExtensionContext) {
     client.start().catch(err => {
         outputChannel.appendLine(`Failed to start client: ${err}`);
     });
+
+    // 6. Listen for settings changes and notify server
+    context.subscriptions.push(
+        workspace.onDidChangeConfiguration(() => {
+            outputChannel.appendLine('Settings changed, reloading...');
+            const settings = getSettings();
+            client.sendNotification('axon/reloadSettings', settings).then(() => {
+                outputChannel.appendLine('Settings reloaded successfully');
+            }).catch((err) => {
+                outputChannel.appendLine(`Failed to reload settings: ${err}`);
+            });
+        })
+    );
 }
 
 export function deactivate(): Thenable<void> | undefined {
