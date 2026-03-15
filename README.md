@@ -61,8 +61,28 @@ See [ROADMAP.md](./ROADMAP.md) for features under development.
 
 ## Requirements
 
-- VS Code 1.70+
+- VS Code 1.80+
 - Python 3.8+
+
+### Python Dependencies
+
+This extension requires Python with the following packages installed:
+
+```bash
+pip install pygls lsprotocol
+```
+
+**Note:** The extension will attempt to use the Python interpreter configured in your VS Code `python.defaultInterpreterPath` setting. If not configured, it will use the system default Python.
+
+#### Setting Python Path in VS Code
+
+If the extension cannot find Python, configure it in your VS Code settings:
+
+1. Open **Settings** (Ctrl+, or Cmd+, on Mac)
+2. Search for `python.defaultInterpreterPath`
+3. Set the path to your Python interpreter (e.g., `/usr/bin/python3` or `C:\Python312\python.exe`)
+
+Alternatively, the extension will automatically detect Python from common locations.
 
 ## Building
 

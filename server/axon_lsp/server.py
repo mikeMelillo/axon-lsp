@@ -769,15 +769,45 @@ manager: Optional[NamespaceManager] = None
 
 class Validator:
     @staticmethod
+    def _parse_local_functions(source: str) -> set:
+        """Parse function definitions from source to identify local/helper functions."""
+        local_funcs = set()
+        lines = source.split("\n")
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+
+            # Match function definitions: name: (args) =>
+            # e.g., foo: (a,b) => return a + b
+            func_match = re.match(r"^(\w+)\s*:\s*\([^)]*\)\s*=>", stripped)
+            if func_match:
+                local_funcs.add(func_match.group(1))
+
+            # Match lambda expressions assigned to names: name: (args) =>
+            lambda_match = re.match(r"^(\w+)\s*:\s*\(", stripped)
+            if lambda_match:
+                local_funcs.add(lambda_match.group(1))
+
+        return local_funcs
+
+    @staticmethod
     def validate(ls: LanguageServer, uri: str, mgr: NamespaceManager):
         doc = ls.workspace.get_text_document(uri)
         mgr.clear_references_for_uri(uri)
         diagnostics = []
+
+        # Parse local functions from this file
+        local_funcs = Validator._parse_local_functions(doc.source)
+
         for i, line in enumerate(doc.source.splitlines()):
             for match in re.finditer(r"\b([a-zA-Z0-9_]+)\b", line):
                 name = match.group(1)
                 if name in ["if", "do", "return", "try", "catch", "throw"]:
                     continue
+
+                # Check if it's a local function defined in this file
+                is_local = name in local_funcs
+
                 f = mgr.find_function(name)
                 if f:
                     mgr.add_reference(
@@ -791,7 +821,16 @@ class Validator:
                         ),
                     )
 
-                if match.end() < len(line) and line[match.end()] == "(" and not f:
+                # Only report as undefined if:
+                # 1. It looks like a function call (followed by parenthesis)
+                # 2. It's NOT defined globally
+                # 3. It's NOT a local function defined in this file
+                if (
+                    match.end() < len(line)
+                    and line[match.end()] == "("
+                    and not f
+                    and not is_local
+                ):
                     diagnostics.append(
                         Diagnostic(
                             range=Range(

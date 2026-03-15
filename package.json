@@ -2,7 +2,7 @@
   "name": "axon-lsp",
   "displayName": "Axon LSP (Project Haystack)",
   "description": "LSP and Syntax Highlighting for the Axon programming language",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "mikeMelillo",
   "engines": {
     "vscode": "^1.80.0"
@@ -18,7 +18,22 @@
         "extensions": [".axon", ".trio"],
         "configuration": "./language-configuration.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Axon LSP",
+      "properties": {
+        "axonLsp.haxallPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to Haxall installation directory (clone from https://github.com/haxall/haxall/tree/3.1.12)"
+        },
+        "axonLsp.externalPaths": {
+          "type": "array",
+          "default": [],
+          "description": "Additional paths to scan for Axon functions (for supporting your local codebase outside of current working directory)"
+        }
+      }
+    }
   },
   "activationEvents": [
     "onLanguage:axon"
@@ -28,7 +43,9 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./client",
     "watch": "tsc -watch -p ./client",
-    "postinstall": "npm install --prefix client"
+    "postinstall": "npm install --prefix client",
+    "package": "vsce package -o build",
+    "publish": "vsce publish"
   },
   "devDependencies": {
     "@types/node": "^16.11.7",
