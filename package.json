@@ -2,7 +2,7 @@
   "name": "axon-lsp",
   "displayName": "Axon LSP (Project Haystack)",
   "description": "LSP and Syntax Highlighting for the Axon programming language",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "mikeMelillo",
   "engines": {
     "vscode": "^1.80.0"
