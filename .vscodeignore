@@ -19,4 +19,5 @@ uv.lock
 build/
 sample_files/
 haxall/
+cache_sources/
 .env

@@ -1,8 +1,11 @@
 # Axon Language Server (axon-lsp)
 
-> **⚠️ POC Notice**: This extension was built with AI assistance (Gemini + MiniMax) as a proof-of-concept. Use at your own risk. Features and functionality may change.
+> **⚠️ POC Notice**: This extension was built with AI assistance (Gemini + MiniMax) as a proof-of-concept. Use at your own risk. 
+
 
 A VS Code extension that provides Language Server Protocol (LSP) support for the Axon programming language used in SkySpark and Haxall.
+
+This is my first whirl at publishing a tool like this so -- you've been warned! I'm hoping to get this working reasonably well circa 3.1.12 and then continue to update once we're in 4.0 to make development easier. I think there are some fun opportunities to add type hints, linting, debuggin into VS Code which should make day to day engineering much easier.
 
 ## Features
 
@@ -26,38 +29,36 @@ code --install-extension axon-lsp-{version}.vsix
 ```
 
 ### From Marketplace
-(TBD - Coming soon)
+[Market Place Install](https://marketplace.visualstudio.com/items?itemName=mikeMelillo.axon-lsp)
 
 ## Configuration
 
-The following settings can be configured in VS Code:
+Currently no configuration is required. This extension has cached the core haxall & skyspark function library, and syncs automatically with your working directory.
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `axonLsp.haxallPath` | Path to Haxall installation | Built-in defaults |
-| `axonLsp.externalPaths` | Additional paths to scan for Axon functions | None |
+Future versions will support further customization or multiple directory support.
 
 ## How It Works
 
-The Axon LSP indexes functions from multiple sources:
+Axon LSP has sourced functions from:
 
-1. **Local Workspace**: Scans `.trio` and `.axon` files in your open workspace
-2. **External Libraries**: Scans configured library paths (e.g., custom extensions)
-3. **Core Functions**: Uses built-in backstop of core SkySpark Axon functions
+- Your local working directory
+- The open source Haxall Repo
+- Known SkySpark functions (function name & doc string only, no argument hints currently)
 
-Priority: Local > External > Core
+The following file types and function types are parsed:
 
-> **Note**: The core function backstop is derived from exported SkySpark function definitions and may lack complete type hints.
+- Support version 3.1.12 only (4.0 future)
+- Supports parsing `func` recs from `.trio` or `@Axon` from `.fan`
+- Supports parsing `defcomp` functions
+- No other file types or recs are read in for LSP caching
 
 ## Roadmap
 
 See [ROADMAP.md](./ROADMAP.md) for features under development.
 
-### Planned Features
-- Signature help (parameter hints)
-- Find references
-- Rename symbol
-- Multiple reference directories support (local Haxall repo, cached core functions, active working directory)
+### Note
+
+In the interest of keeping this extension small and (hopefully) fast, I've cached core functions into a small file rather than include the entire haxall repo, or making REST calls out to github to update. For that reason, reference linking to the Haxall core lib functions is not currently supported, exploring the best way to do this in the future (either hyperlink out to github web page at that .fan file or allow user to set directory to a local haxall clone for in-editor loading).
 
 ## Requirements
 
@@ -97,7 +98,3 @@ npx vsce package
 ## License
 
 MIT License - see [LICENSE](./LICENSE) file.
-
-## Credits
-
-Built with AI assistance from Gemini and MiniMax.

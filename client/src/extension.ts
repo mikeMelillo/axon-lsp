@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { workspace, ExtensionContext, window } from 'vscode';
+import { workspace, ExtensionContext, window, commands, env, Uri } from 'vscode';
 import {
     LanguageClient,
     LanguageClientOptions,
@@ -60,6 +60,14 @@ export function activate(context: ExtensionContext) {
     client.start().catch(err => {
         outputChannel.appendLine(`Failed to start client: ${err}`);
     });
+
+    // 6. Register command to open external URLs in browser
+    context.subscriptions.push(
+        commands.registerCommand('extension.openExternal', (url: string) => {
+            console.log('OpenExternal called with:', url); 
+            env.openExternal(Uri.parse(url));
+        })
+    );
 }
 
 export function deactivate(): Thenable<void> | undefined {

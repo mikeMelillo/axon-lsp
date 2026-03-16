@@ -77,6 +77,11 @@ function activate(context) {
     client.start().catch(err => {
         outputChannel.appendLine(`Failed to start client: ${err}`);
     });
+    // 6. Register command to open external URLs in browser
+    context.subscriptions.push(vscode_1.commands.registerCommand('extension.openExternal', (url) => {
+        console.log('OpenExternal called with:', url);
+        vscode_1.env.openExternal(vscode_1.Uri.parse(url));
+    }));
 }
 function deactivate() {
     if (!client) {

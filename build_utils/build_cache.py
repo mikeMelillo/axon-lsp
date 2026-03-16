@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import shutil
 from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -10,6 +11,11 @@ load_dotenv()
 
 GITHUB_BASE = os.getenv("GITHUB_BASE", "https://github.com/haxall/haxall/blob/3.1.12")
 LOCAL_PREFIX = os.getenv("LOCAL_PREFIX")
+
+
+TARGET_CORE_FUNCS_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "server", "axon_lsp", "coreFuncs.trio"
+    )
 
 CORE_FUNCS = "cache_sources/coreFuncs.trio"
 HAXALL_PATH = "cache_sources/haxall"
@@ -68,6 +74,9 @@ def build_cache():
     # Write to output
     with open(OUTPUT_PATH, "w") as f:
         json.dump(func_list, f, indent=2)
+
+    shutil.copy2(CORE_FUNCS, TARGET_CORE_FUNCS_PATH)
+    print(f"Copied {CORE_FUNCS} to {TARGET_CORE_FUNCS_PATH}")
 
     print(f"Wrote {len(func_list)} functions to {OUTPUT_PATH}")
     print(f"  .trio files: {trio_count}")

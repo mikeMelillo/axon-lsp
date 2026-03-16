@@ -3,9 +3,11 @@ import os
 import re
 import json
 import logging
+
 # import pickle
 # import subprocess
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
+from pathlib import Path
 
 try:
     from pygls.server import LanguageServer
@@ -37,6 +39,7 @@ from lsprotocol.types import (
     MarkupContent,
     MarkupKind,
     HoverParams,
+    Command,
 )
 
 # Set up logging to stderr so pygls captures it for VS Code Output
@@ -187,10 +190,8 @@ class TrioParser:
                             params_list = []
                         return_type = None
 
-                    # if return_type:
-                    #     detail = f"{name}{args_str} // -> {return_type}"
-                    # else:
-                    #     detail = f"{name}{args_str}"
+                    abs_path = Path(filepath).resolve()
+                    uri = abs_path.as_uri()
 
                     found_funcs[name] = {
                         "name": name,
@@ -290,17 +291,26 @@ class NamespaceManager:
                     if name:
                         loc_uri = func.get("location", {}).get("uri")
                         if loc_uri == "axon-ext://coreFuncs.trio":
-                            # Resolve to actual extension path
-                            ext_path = os.path.join(os.path.dirname(__file__), "..", "coreFuncs.trio")
-                            loc_uri = f"file://{ext_path}"
+                            ext_path = Path(__file__).parent / "coreFuncs.trio"
+                            loc_uri = ext_path.as_uri()
                         # Reconstruct function dict with proper types
+                        if loc_uri:
+                            location = Location(
+                                uri=loc_uri,
+                                range=Range(
+                                    start=Position(line=0, character=0),
+                                    end=Position(line=0, character=0),
+                                ),
+                            )
+                        else:
+                            location = None
                         self.core_funcs[name] = {
                             "name": name,
                             "doc": func.get("doc", ""),
                             "args_str": func.get("args_str", "()"),
                             "params": func.get("params", []),
                             "kind": kind_val,
-                            "location": {"uri": loc_uri} if loc_uri else None,
+                            "location": location,
                         }
                 logger.info(f"Loaded {len(self.core_funcs)} functions from cache")
             except Exception as e:
@@ -343,12 +353,21 @@ class NamespaceManager:
             for f in merged.values()
         ]
 
-    def get_definition(self, symbol: str) -> Optional[Location]:
-        return (
+    def get_definition(self, symbol: str) -> Optional[Union[Location, Command]]:
+        loc = (
             self.local_funcs.get(symbol, {}).get("location")
             or self.external_funcs.get(symbol, {}).get("location")
             or self.core_funcs.get(symbol, {}).get("location")
         )
+
+        if loc and loc.uri and loc.uri.startswith("https://"):
+            return Command(
+                title="Open in GitHub",
+                command="extension.openExternal",
+                arguments=[loc.uri],
+            )
+
+        return loc
 
     def find_function(self, name: str) -> Optional[dict]:
         return (

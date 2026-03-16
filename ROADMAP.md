@@ -1,39 +1,21 @@
 # Axon LSP Roadmap
 
-## Version 0.1.x - Current (POC)
+## Version 0.1.3 - Current (POC)
 
 ### Completed
 - Basic autocomplete for Axon functions
 - Hover information
-- Go to definition
+- Go to definition (disregarding haxall repo links)
 - Diagnostics for undefined functions
 - Support for `defcomp` syntax
 - Basic syntax highlighting
 
 ### Known Limitations
 - Core functions lack complete type hints
-- Limited to single workspace directory
-- No support for multiple reference directories
-
-## Future Versions
-
-### Version 0.2.0 - Enhanced Reference Support
-- [ ] Multiple reference directories support:
-  - Local Haxall repository
-  - Cached core functions (built-in backstop)
-  - Active working directory
-- [ ] Improved type hints for core functions
-
-### Version 0.3.0 - Advanced Features
-- [ ] Signature help (parameter hints when typing function calls)
-- [ ] Find references
-- [ ] Rename symbol
-
-### Version 1.0.0 - Production Ready
-- [ ] Complete type hints for all core functions
-- [ ] Full Haxall 4.0 support
-- [ ] Marketplace publication
-- [ ] Comprehensive test coverage
+- I'd like to index the core / skyspark functions completely for argument + type hints
+- Need to decide on linking to haxall functions (external to github, local repo, etc.)
+- Add support for multiple workspace directories
+- Convert to 4.0 Xeto Spec Definitions for future versions
 
 ## Architecture Notes
 
