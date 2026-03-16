@@ -20,4 +20,5 @@ build/
 sample_files/
 haxall/
 cache_sources/
+build_utils/
 .env
