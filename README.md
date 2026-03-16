@@ -11,7 +11,7 @@ This is my first whirl at publishing a tool like this so -- you've been warned! 
 
 - **Autocomplete**: Intelligent code completion for Axon functions
 - **Hover Information**: View function documentation on hover
-- **Go to Definition**: Navigate to function definitions
+- **Go to Definition**: Navigate to function definitions within workspace (links out to core lib & haxall WIP)
 - **Diagnostics**: Real-time error detection for undefined functions
 
 ## Installation
