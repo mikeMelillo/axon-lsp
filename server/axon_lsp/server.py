@@ -113,7 +113,7 @@ class FantomParser:
                                         line=i, character=line.find("@Axon")
                                     ),
                                     end=Position(
-                                        line=i, character=line.find("@Axon") + 5
+                                        line=i, character=line.find("@Axon") + 5 + len(name)
                                     ),
                                 ),
                             ),
@@ -336,6 +336,8 @@ class NamespaceManager:
             for file in files:
                 if file.endswith((".trio", ".axon")):
                     new_local.update(TrioParser.parse_file(os.path.join(root, file)))
+                elif file.endswith((".fan")):
+                    new_local.update(FantomParser.parse_file(os.path.join(root, file)))
         self.local_funcs = new_local
 
     def get_completions(self) -> List[CompletionItem]:
