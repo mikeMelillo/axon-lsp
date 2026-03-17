@@ -113,7 +113,8 @@ class FantomParser:
                                         line=i, character=line.find("@Axon")
                                     ),
                                     end=Position(
-                                        line=i, character=line.find("@Axon") + 5 + len(name)
+                                        line=i,
+                                        character=line.find("@Axon") + 5 + len(name),
                                     ),
                                 ),
                             ),
@@ -398,12 +399,18 @@ class Validator:
             # e.g., foo: (a,b) => return a + b
             func_match = re.match(r"^(\w+)\s*:\s*\([^)]*\)\s*=>", stripped)
             if func_match:
-                local_funcs.add(func_match.group(1))
+                func_name = func_match.group(1)
+                # Skip if line contains quotes (string literals)
+                if '"' not in stripped and "'" not in stripped:
+                    local_funcs.add(func_name)
 
             # Match lambda expressions assigned to names: name: (args) =>
             lambda_match = re.match(r"^(\w+)\s*:\s*\(", stripped)
             if lambda_match:
-                local_funcs.add(lambda_match.group(1))
+                func_name = lambda_match.group(1)
+                # Skip if line contains quotes (string literals)
+                if '"' not in stripped and "'" not in stripped:
+                    local_funcs.add(func_name)
 
         return local_funcs
 
@@ -419,6 +426,12 @@ class Validator:
         for i, line in enumerate(doc.source.splitlines()):
             for match in re.finditer(r"\b([a-zA-Z0-9_]+)\b", line):
                 name = match.group(1)
+
+                # Skip if inside a string literal (quoted string)
+                quote_count_before = line[: match.start()].count('"')
+                if quote_count_before % 2 == 1:
+                    continue
+
                 if name in ["if", "do", "return", "try", "catch", "throw"]:
                     continue
 

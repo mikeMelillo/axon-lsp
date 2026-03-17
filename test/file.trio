@@ -1,0 +1,56 @@
+name: myCustomCalculation
+func
+doc: "Does a calculation"
+src:
+    (abc, efg) => do
+        hisRead(point, dates)
+
+        data: [
+            {item: 123, funcName: "dontReadMePlease()"},
+            {item: 123, funcName: "youShouldntWorkEither(123,456)"},
+        ]
+
+        myTestFantomFunction
+        
+        map(val, his)
+    end
+---
+name: anotherFunction
+func
+doc: "Another helper"
+src: (rec, opts) => do
+        bananaPhone(readAll)
+        spark_damperOpen().map().each()
+        file.map()
+        add()
+        xq
+        hisRead()
+        data.hisRead()
+    end
+---
+name: bananaPhone
+func
+doc: "new and improved"
+src:
+    (apple) => do
+        justHelping: (x) => return x
+
+        newResult: (foo) => justHelping(foo)
+
+        y: newResult()
+
+        x: justHelping(1)
+
+        readAll(point and data).theNewDeal.map(val=> val.round())
+
+        pi()
+
+    end
+---
+name: tester
+func
+doc: "Hmmm"
+src:
+    (apple) => do
+        bananaPhone(apple)
+    end

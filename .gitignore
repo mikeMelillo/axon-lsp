@@ -2,6 +2,5 @@
 node_modules/
 .venv/
 __pycache__/
-test/
 build/
 cache_sources/haxall

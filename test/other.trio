@@ -1,0 +1,17 @@
+name: newCalc
+func
+doc: "Does a specific project calculation"
+src:
+    (abc, efg) => do
+        
+        readAll().m
+
+    end
+-------
+name: theNewDeal
+func
+doc: "stufffff"
+src:
+    (args) => do
+        
+    end

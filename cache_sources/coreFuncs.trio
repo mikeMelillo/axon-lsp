@@ -1,3 +1,7 @@
+name:Span
+doc:
+    Utility function for calling Span in views
+---
 name:pastWeek
 def:^func:pastWeek
 doc:
