@@ -53,4 +53,12 @@ doc: "Hmmm"
 src:
     (apple) => do
         bananaPhone(apple)
+        definitions: [
+            { defName:  "foo", funcCall: callMePlease },
+            { defName:  "foo", funcCall: howAreYou }
+        ]
+
+        definer: (inputFunction, defName) => inputFunction(defName) // <--- this line "inputFunction(..)" gets the false positive
+
+        definitions.each(d=> definer(d->funcCall, d->defName) )
     end

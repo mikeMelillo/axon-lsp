@@ -387,22 +387,66 @@ manager: Optional[NamespaceManager] = None
 
 class Validator:
     @staticmethod
-    def _parse_local_functions(source: str) -> set:
-        """Parse function definitions from source to identify local/helper functions."""
+    def _parse_local_functions(source: str) -> tuple[set, dict]:
+        """Parse function definitions from source to identify local/helper functions.
+
+        Returns:
+            local_funcs: set of function names defined in this file
+            param_scopes: dict mapping line number -> set of parameter names valid at that line
+        """
         local_funcs = set()
+        param_scopes = {}  # line -> set of valid param names for that scope
         lines = source.split("\n")
+
+        # Track current function's parameter scope
+        current_params = set()
+        scope_start = -1
+        func_indent = 0  # Indentation level of the function definition
 
         for i, line in enumerate(lines):
             stripped = line.strip()
 
+            # Remove comments (Axon uses // for comments)
+            if "//" in stripped:
+                stripped = stripped.split("//")[0].strip()
+
+            # Calculate current line's indentation
+            indent = len(line) - len(line.lstrip())
+
+            # Detect end of current function scope
+            # (line has less indentation than the function definition)
+            if scope_start >= 0 and stripped and indent < func_indent:
+                # End of previous function scope
+                for j in range(scope_start, i):
+                    param_scopes[j] = current_params.copy()
+                current_params = set()
+                scope_start = -1
+
             # Match function definitions: name: (args) =>
-            # e.g., foo: (a,b) => return a + b
-            func_match = re.match(r"^(\w+)\s*:\s*\([^)]*\)\s*=>", stripped)
+            # e.g., definer: (inputFunction, defName) =>
+            # Can be indented (e.g., "        definer: (inputFunction, defName) =>")
+            func_match = re.match(r"^\s*(\w+)\s*:\s*\(([^)]*)\)\s*=>", stripped)
             if func_match:
                 func_name = func_match.group(1)
+                params_str = func_match.group(2)
+
                 # Skip if line contains quotes (string literals)
                 if '"' not in stripped and "'" not in stripped:
                     local_funcs.add(func_name)
+
+                    # Parse parameter names
+                    current_params = set()
+                    if params_str:
+                        for param in params_str.split(","):
+                            param = param.strip()
+                            if param:
+                                current_params.add(param)
+
+                    # Start tracking this scope and add params to current line immediately
+                    # (since the function definition line may contain code using params)
+                    scope_start = i
+                    func_indent = len(line) - len(line.lstrip())
+                    param_scopes[i] = current_params.copy()
 
             # Match lambda expressions assigned to names: name: (args) =>
             lambda_match = re.match(r"^(\w+)\s*:\s*\(", stripped)
@@ -412,7 +456,12 @@ class Validator:
                 if '"' not in stripped and "'" not in stripped:
                     local_funcs.add(func_name)
 
-        return local_funcs
+        # Fill in param scope for remaining lines after last function
+        if scope_start >= 0:
+            for j in range(scope_start, len(lines)):
+                param_scopes[j] = current_params.copy()
+
+        return local_funcs, param_scopes
 
     @staticmethod
     def validate(ls: LanguageServer, uri: str, mgr: NamespaceManager):
@@ -421,7 +470,7 @@ class Validator:
         diagnostics = []
 
         # Parse local functions from this file
-        local_funcs = Validator._parse_local_functions(doc.source)
+        local_funcs, param_scopes = Validator._parse_local_functions(doc.source)
 
         for i, line in enumerate(doc.source.splitlines()):
             for match in re.finditer(r"\b([a-zA-Z0-9_]+)\b", line):
@@ -437,6 +486,10 @@ class Validator:
 
                 # Check if it's a local function defined in this file
                 is_local = name in local_funcs
+
+                # Check if it's a parameter in the current function scope
+                current_params = param_scopes.get(i, set())
+                is_param = name in current_params
 
                 f = mgr.find_function(name)
                 if f:
@@ -455,11 +508,13 @@ class Validator:
                 # 1. It looks like a function call (followed by parenthesis)
                 # 2. It's NOT defined globally
                 # 3. It's NOT a local function defined in this file
+                # 4. It's NOT a parameter in the current function scope
                 if (
                     match.end() < len(line)
                     and line[match.end()] == "("
                     and not f
                     and not is_local
+                    and not is_param
                 ):
                     diagnostics.append(
                         Diagnostic(

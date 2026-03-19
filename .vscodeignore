@@ -22,3 +22,4 @@ haxall/
 cache_sources/
 build_utils/
 .env
+tests/
