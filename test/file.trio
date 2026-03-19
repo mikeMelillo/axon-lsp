@@ -2,8 +2,12 @@ name: myCustomCalculation
 func
 doc: "Does a calculation"
 src:
-    (abc, efg) => do
+    (abc, efg) => do //lspignore
+    subView: {
+        var: {input: "Str", defVal:Span(thisMonth)} //lspignore
+    }
         hisRead(point, dates)
+        
 
         data: [
             {item: 123, funcName: "dontReadMePlease()"},
@@ -11,6 +15,13 @@ src:
         ]
 
         myTestFantomFunction
+
+        someViewData: [
+            {item: abcd, data:Span()} //lspignore
+        ]
+        
+
+        spark_damperOpen
         
         map(val, his)
     end

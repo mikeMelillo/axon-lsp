@@ -473,6 +473,10 @@ class Validator:
         local_funcs, param_scopes = Validator._parse_local_functions(doc.source)
 
         for i, line in enumerate(doc.source.splitlines()):
+            # Skip lines with //lspignore comment
+            if "//lspignore" in line:
+                continue
+
             for match in re.finditer(r"\b([a-zA-Z0-9_]+)\b", line):
                 name = match.group(1)
 

@@ -161,3 +161,55 @@ src:
             d.message for d in diagnostics if d.message.startswith("Undefined")
         ]
         assert len(undefined_messages) == 0
+
+    def test_ignores_line_with_lspignore(self, mock_ls, mock_text_document):
+        source = "undefinedFunc(x) //lspignore"
+        mock_ls.workspace.get_text_document.return_value = mock_text_document
+        mock_text_document.source = source
+
+        mgr = NamespaceManager()
+        Validator.validate(mock_ls, "file:///test.trio", mgr)
+
+        call_args = mock_ls.publish_diagnostics.call_args
+        diagnostics = call_args[0][1]
+        assert len(diagnostics) == 0
+
+    def test_lspignore_is_case_sensitive(self, mock_ls, mock_text_document):
+        source = "undefinedFunc(x) //LspIgnore"
+        mock_ls.workspace.get_text_document.return_value = mock_text_document
+        mock_text_document.source = source
+
+        mgr = NamespaceManager()
+        Validator.validate(mock_ls, "file:///test.trio", mgr)
+
+        call_args = mock_ls.publish_diagnostics.call_args
+        diagnostics = call_args[0][1]
+        assert any(
+            d.message == "Undefined function: undefinedFunc" for d in diagnostics
+        )
+
+    def test_lspignore_with_multiple_funcs_on_line(self, mock_ls, mock_text_document):
+        source = "funcA(x) funcB(y) //lspignore"
+        mock_ls.workspace.get_text_document.return_value = mock_text_document
+        mock_text_document.source = source
+
+        mgr = NamespaceManager()
+        Validator.validate(mock_ls, "file:///test.trio", mgr)
+
+        call_args = mock_ls.publish_diagnostics.call_args
+        diagnostics = call_args[0][1]
+        assert len(diagnostics) == 0
+
+    def test_without_lspignore_still_errors(self, mock_ls, mock_text_document):
+        source = "undefinedFunc(x)"
+        mock_ls.workspace.get_text_document.return_value = mock_text_document
+        mock_text_document.source = source
+
+        mgr = NamespaceManager()
+        Validator.validate(mock_ls, "file:///test.trio", mgr)
+
+        call_args = mock_ls.publish_diagnostics.call_args
+        diagnostics = call_args[0][1]
+        assert any(
+            d.message == "Undefined function: undefinedFunc" for d in diagnostics
+        )
