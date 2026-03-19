@@ -84,3 +84,14 @@ def mock_text_document():
     doc = MagicMock()
     doc.source = ""
     return doc
+
+
+@pytest.fixture
+def mgr_with_local_funcs():
+    """NamespaceManager with local functions loaded from test/file.trio."""
+    from server.axon_lsp.server import NamespaceManager, TrioParser
+
+    mgr = NamespaceManager()
+    test_file = os.path.join(os.path.dirname(__file__), "..", "test", "file.trio")
+    mgr.local_funcs = TrioParser.parse_file(test_file)
+    return mgr
