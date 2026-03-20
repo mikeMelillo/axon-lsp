@@ -31,9 +31,15 @@ code --install-extension axon-lsp-{version}.vsix
 ### From Marketplace
 [Market Place Install](https://marketplace.visualstudio.com/items?itemName=mikeMelillo.axon-lsp)
 
-## Configuration
+## Configuration & Dependencies
 
-Currently no configuration is required. This extension has cached the core haxall & skyspark function library, and syncs automatically with your working directory.
+The server is written in Python on top of pygls (lsprotocol and cattrs are bundled with pygls). Any Python rev newer than 3.11 has ran fine in testing. Pygls should be version 1.3.X. If the server remains in Python I will eventually look at migrating to pygls 2. 
+
+`pip install pygls==1.3.0`
+
+I understand this adds some friction to using the extension, but it allowed for the quickest path to do what really amounts to an experimental / open source project first for my own use. **In the future, I would consider a server rewrite in Go, so if you have opinions there, please reach out.**
+
+Beyond that, there's currently no configuration required. This extension has cached the core haxall & skyspark function library, and syncs automatically with your local working directory. This is nice, because you don't need to have the Haxall repo cloned onto your machine to make use of the extension.
 
 Future versions will support further customization or multiple directory support.
 
