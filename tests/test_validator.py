@@ -55,6 +55,41 @@ end
         assert "helper" in local_funcs
         assert "wrapper" in local_funcs
 
+    def test_ignores_dict_keys_in_multiline_dict(self):
+        source = """object: {
+    data: 'foo',
+    name: 'bar',
+}
+result: process(object)
+"""
+        local_funcs, param_scopes = Validator._parse_local_functions(source)
+        assert "object" in local_funcs
+        assert "result" in local_funcs
+        assert "data" not in local_funcs
+        assert "name" not in local_funcs
+
+    def test_nested_dicts_ignored(self):
+        source = """outer: {
+    inner: {
+        key: 'value',
+    },
+}
+anotherVar: foo()
+"""
+        local_funcs, param_scopes = Validator._parse_local_functions(source)
+        assert "outer" in local_funcs
+        assert "anotherVar" in local_funcs
+        assert "inner" not in local_funcs
+        assert "key" not in local_funcs
+
+    def test_func_with_quotes_in_expression(self):
+        source = """getTotal: (pt, ds) => pt.hisRead(ds).foldCol("v0", sum)
+result: getTotal(point, dates)
+"""
+        local_funcs, param_scopes = Validator._parse_local_functions(source)
+        assert "getTotal" in local_funcs
+        assert "result" in local_funcs
+
 
 class TestValidate:
     def test_reports_undefined_function(self, mock_ls, mock_text_document):

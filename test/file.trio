@@ -46,7 +46,21 @@ src:
     (apple) => do
         justHelping: (x) => return x
 
-        newResult: (foo) => justHelping(foo)
+        newResult: (foo) => return a + b
+
+        someInfo: {
+            object: "foo",
+            data: "bar"
+        }
+
+        // Helper to safely get total consumption
+        getTotal: (pt, ds) => try pt.hisRead(ds).hisClip.foldCol("v0", sum) catch null
+        
+        // Calculate all values
+        feedThis: getTotal(mainFeed, dateSpan)
+        feedPrev: getTotal(mainFeed, dateSpanPrev)
+        feedThisYtd: getTotal(mainFeed, ytdThisSpan)
+        feedPrevYtd: getTotal(mainFeed, ytdPrevSpan)
 
         y: newResult()
 

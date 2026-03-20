@@ -402,6 +402,7 @@ class Validator:
         current_params = set()
         scope_start = -1
         func_indent = 0  # Indentation level of the function definition
+        brace_depth = 0  # Track dictionary depth
 
         for i, line in enumerate(lines):
             stripped = line.strip()
@@ -414,7 +415,7 @@ class Validator:
             indent = len(line) - len(line.lstrip())
 
             # Detect end of current function scope
-            # (line has less indentation than the function definition)
+            # (Line has less indentation than the function definition)
             if scope_start >= 0 and stripped and indent < func_indent:
                 # End of previous function scope
                 for j in range(scope_start, i):
@@ -429,9 +430,11 @@ class Validator:
             if func_match:
                 func_name = func_match.group(1)
                 params_str = func_match.group(2)
+                declaration = func_match.group(0)
 
-                # Skip if line contains quotes (string literals)
-                if '"' not in stripped and "'" not in stripped:
+                # Skip if declaration part contains quotes (string literals)
+                # Note: Expression after => may have quotes, which is fine
+                if '"' not in declaration and "'" not in declaration:
                     local_funcs.add(func_name)
 
                     # Parse parameter names
@@ -449,12 +452,25 @@ class Validator:
                     param_scopes[i] = current_params.copy()
 
             # Match lambda expressions assigned to names: name: (args) =>
-            lambda_match = re.match(r"^(\w+)\s*:\s*\(", stripped)
+            lambda_match = re.match(r"^\s*(\w+)\s*:\s*\(", stripped)
             if lambda_match:
                 func_name = lambda_match.group(1)
                 # Skip if line contains quotes (string literals)
                 if '"' not in stripped and "'" not in stripped:
                     local_funcs.add(func_name)
+
+            # Detect any variable declaration (word followed by :)
+            # Only when NOT inside a dictionary (brace_depth == 0)
+            if brace_depth == 0:
+                var_match = re.match(r"^\s*(\w+)\s*:", stripped)
+                if var_match and '"' not in stripped and "'" not in stripped:
+                    # Add the variable name
+                    local_funcs.add(var_match.group(1))
+
+            # Track dictionary depth AFTER processing (only when not inside a string)
+            if '"' not in stripped and "'" not in stripped:
+                brace_depth += stripped.count("{") - stripped.count("}")
+                brace_depth = max(0, brace_depth)
 
         # Fill in param scope for remaining lines after last function
         if scope_start >= 0:
