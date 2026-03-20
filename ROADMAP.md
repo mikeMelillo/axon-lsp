@@ -1,6 +1,6 @@
 # Axon LSP Roadmap
 
-## Version 0.1.3 - Current (POC)
+## Version 0.1.7 - Current (POC)
 
 ### Completed
 - Basic autocomplete for Axon functions
@@ -28,3 +28,12 @@
 - Architecture changes expected
 - Will need to adapt indexing logic
 - May require different function discovery mechanism
+
+
+### Patch Notes
+
+- 0.1.5 - 0.1.7
+    - Add //lspignore for single line omissions
+    - Correct local fantom function indexing
+    - Now omits "Text(args)" in strings correctly
+    - Add detection for local helper functions
