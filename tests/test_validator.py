@@ -55,7 +55,28 @@ end
         assert "helper" in local_funcs
         assert "wrapper" in local_funcs
 
-    def test_ignores_dict_keys_in_multiline_dict(self):
+    def test_ignores_doc_field_multi_line(self):
+        source = """name: myFunc
+doc:
+    The 'fn(x)' function does something
+    More text
+src:
+    helper: (a) => do something(a)
+"""
+        local_funcs, param_scopes = Validator._parse_local_functions(source)
+        assert "fn" not in local_funcs
+        assert "helper" in local_funcs
+
+    def test_ignores_summary_field(self):
+        source = """name: test
+summary:
+    Description with 'helper(a)' inside
+src:
+    myHelper: (b) => do something(b)
+"""
+        local_funcs, param_scopes = Validator._parse_local_functions(source)
+        assert "helper" not in local_funcs
+        assert "myHelper" in local_funcs
         source = """object: {
     data: 'foo',
     name: 'bar',

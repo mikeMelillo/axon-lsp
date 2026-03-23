@@ -1,6 +1,13 @@
 name: myCustomCalculation
 func
-doc: "Does a calculation"
+doc:
+  Fold a list or stream into a single value using given folding function.
+  The folding function signature must be '(val, acc)' where val is the items
+  being folded, and acc is an accumulator used to maintain
+  state between iterations.  Lifecycle of a fold:
+    1. Call 'fn(foldStart, null)', return initial accumulator state
+    2. Call 'fn(item, acc)' for every item, return new accumulator state
+    3. Call 'fn(foldEnd, acc)' return final result
 src:
     (abc, efg) => do //lspignore
     subView: {
@@ -19,9 +26,11 @@ src:
         someViewData: [
             {item: abcd, data:Span()} //lspignore
         ]
-        
 
-        spark_damperOpen
+        
+        readAll()
+
+        spark_damperOpen({target, date, damp})
         
         map(val, his)
     end

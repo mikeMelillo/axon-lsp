@@ -20,6 +20,7 @@ from lsprotocol.types import (
     TEXT_DOCUMENT_DID_CHANGE,
     TEXT_DOCUMENT_DEFINITION,
     TEXT_DOCUMENT_HOVER,
+    TEXT_DOCUMENT_SIGNATURE_HELP,
     INITIALIZED,
     CompletionItem,
     CompletionItemKind,
@@ -40,6 +41,11 @@ from lsprotocol.types import (
     MarkupKind,
     HoverParams,
     Command,
+    SignatureHelp,
+    SignatureInformation,
+    SignatureHelpParams,
+    SignatureHelpOptions,
+    ParameterInformation,
 )
 
 # Set up logging to stderr so pygls captures it for VS Code Output
@@ -379,6 +385,30 @@ class NamespaceManager:
             or self.core_funcs.get(name)
         )
 
+    def build_signature_help(self, func_name: str) -> Optional[SignatureHelp]:
+        f = self.find_function(func_name)
+        if not f:
+            return None
+
+        args_str = f.get("args_str", "()")
+        params = args_str.strip("()").split(",") if args_str.strip("()") else []
+
+        return SignatureHelp(
+            signatures=[
+                SignatureInformation(
+                    label=f["name"] + f["args_str"],
+                    documentation=f.get("doc", ""),
+                    parameters=[
+                        ParameterInformation(label=p.strip())
+                        for p in params
+                        if p.strip()
+                    ],
+                )
+            ],
+            active_signature=0,
+            active_parameter=0,
+        )
+
 
 # Create server instance
 server = LanguageServer("axon-lsp-server", VERSION)
@@ -386,6 +416,9 @@ manager: Optional[NamespaceManager] = None
 
 
 class Validator:
+    # Record fields whose multi-line values should be ignored
+    IGNORE_RECORD_FIELDS = ["doc:", "summary:", "description:", "notes:", " remarks:"]
+
     @staticmethod
     def _parse_local_functions(source: str) -> tuple[set, dict]:
         """Parse function definitions from source to identify local/helper functions.
@@ -403,16 +436,26 @@ class Validator:
         scope_start = -1
         func_indent = 0  # Indentation level of the function definition
         brace_depth = 0  # Track dictionary depth
+        in_ignored_field = False  # Track multi-line record field values
 
         for i, line in enumerate(lines):
             stripped = line.strip()
 
+            # Calculate current line's indentation (needed for field detection)
+            indent = len(line) - len(line.lstrip())
+
+            # Check if entering or exiting an ignored record field
+            if any(stripped.startswith(f) for f in Validator.IGNORE_RECORD_FIELDS):
+                in_ignored_field = True
+            elif in_ignored_field and stripped and indent < 2:
+                in_ignored_field = False
+
+            if in_ignored_field:
+                continue
+
             # Remove comments (Axon uses // for comments)
             if "//" in stripped:
                 stripped = stripped.split("//")[0].strip()
-
-            # Calculate current line's indentation
-            indent = len(line) - len(line.lstrip())
 
             # Detect end of current function scope
             # (Line has less indentation than the function definition)
@@ -488,7 +531,21 @@ class Validator:
         # Parse local functions from this file
         local_funcs, param_scopes = Validator._parse_local_functions(doc.source)
 
+        in_ignored_field = False
+
         for i, line in enumerate(doc.source.splitlines()):
+            stripped = line.strip()
+            indent = len(line) - len(line.lstrip())
+
+            # Check if entering or exiting an ignored record field
+            if any(stripped.startswith(f) for f in Validator.IGNORE_RECORD_FIELDS):
+                in_ignored_field = True
+            elif in_ignored_field and stripped and indent < 2:
+                in_ignored_field = False
+
+            if in_ignored_field:
+                continue
+
             # Skip lines with //lspignore comment
             if "//lspignore" in line:
                 continue
@@ -609,6 +666,26 @@ def hover(ls: LanguageServer, params: HoverParams) -> Optional[Hover]:
                         value=f"**{f['name']}{f['args_str']}**\n\n---\n\n{f['doc']}",
                     )
                 )
+    return None
+
+
+@server.feature(
+    TEXT_DOCUMENT_SIGNATURE_HELP,
+    SignatureHelpOptions(trigger_characters=["("]),
+)
+def signature_help(
+    ls: LanguageServer, params: SignatureHelpParams
+) -> Optional[SignatureHelp]:
+    if not manager:
+        return None
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    line = doc.source.splitlines()[params.position.line]
+
+    for match in re.finditer(r"\b([a-zA-Z0-9_]+)\b", line):
+        if match.end() <= params.position.character:
+            func_name = match.group(1)
+            return manager.build_signature_help(func_name)
+
     return None
 
 
