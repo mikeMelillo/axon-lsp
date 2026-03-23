@@ -46,6 +46,8 @@ from lsprotocol.types import (
     SignatureHelpParams,
     SignatureHelpOptions,
     ParameterInformation,
+    TEXT_DOCUMENT_REFERENCES,
+    ReferenceParams,
 )
 
 # Set up logging to stderr so pygls captures it for VS Code Output
@@ -385,6 +387,10 @@ class NamespaceManager:
             or self.core_funcs.get(name)
         )
 
+    def get_references(self, symbol: str) -> List[Location]:
+        """Get all references to a symbol in the workspace."""
+        return self.references_map.get(symbol, [])
+
     def build_signature_help(self, func_name: str) -> Optional[SignatureHelp]:
         f = self.find_function(func_name)
         if not f:
@@ -685,6 +691,22 @@ def signature_help(
         if match.end() <= params.position.character:
             func_name = match.group(1)
             return manager.build_signature_help(func_name)
+
+    return None
+
+
+@server.feature(TEXT_DOCUMENT_REFERENCES)
+def references(ls: LanguageServer, params: ReferenceParams) -> Optional[List[Location]]:
+    if not manager:
+        return None
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    line = doc.source.splitlines()[params.position.line]
+
+    words = re.finditer(r"\b([a-zA-Z0-9_]+)\b", line)
+    for m in words:
+        if m.start() <= params.position.character <= m.end():
+            symbol = m.group(1)
+            return manager.get_references(symbol)
 
     return None
 
