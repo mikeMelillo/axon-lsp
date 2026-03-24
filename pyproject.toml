@@ -1,6 +1,6 @@
 [project]
 name = "axon-lsp"
-version = "0.1.7"
+version = "0.1.8"
 requires-python = ">=3.8"
 dependencies = [
     "pygls>=1.2,<2.0.0",
