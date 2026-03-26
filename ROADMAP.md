@@ -1,6 +1,6 @@
 # Axon LSP Roadmap
 
-## Version 0.1.7 - Current (POC)
+## Version 0.1.8 - Current
 
 ### Completed
 - Basic autocomplete for Axon functions
@@ -9,6 +9,8 @@
 - Diagnostics for undefined functions
 - Support for `defcomp` syntax
 - Basic syntax highlighting
+- Function signature
+- Reference finder
 
 ### Known Limitations
 - Core functions lack complete type hints
@@ -32,6 +34,11 @@
 
 ### Patch Notes
 
+- 0.1.8
+    - Inline object detection for function definitions/false positives
+    - Function signature support added
+    - Exclude detection within 'doc' and 'summary' tags
+    - Reference finder support added
 - 0.1.5 - 0.1.7
     - Add //lspignore for single line omissions
     - Correct local fantom function indexing
