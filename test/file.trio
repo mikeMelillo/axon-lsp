@@ -27,6 +27,16 @@ src:
             {item: abcd, data:Span()} //lspignore
         ]
 
+        brokenHelper: (bar, foo: "hello") => do
+            return foo + bar
+        end
+
+        x: brokenHelper(3,4)
+
+        otherHelper (banana: "yikes", hello) => return banana
+
+        y: otherHelper(4,5)
+
         
         readAll()
 

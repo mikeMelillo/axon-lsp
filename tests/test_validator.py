@@ -111,6 +111,43 @@ result: getTotal(point, dates)
         assert "getTotal" in local_funcs
         assert "result" in local_funcs
 
+    def test_func_with_default_string_param(self):
+        source = """helper: (arg1, arg2: "default") => arg1 + arg2
+result: helper(1, 2)
+"""
+        local_funcs, param_scopes = Validator._parse_local_functions(source)
+        assert "helper" in local_funcs
+        assert "result" in local_funcs
+
+    def test_func_without_colon_before_parens(self):
+        source = """otherHelper (banana: "yikes", hello) => return banana
+result: otherHelper("x", 1)
+"""
+        local_funcs, param_scopes = Validator._parse_local_functions(source)
+        assert "otherHelper" in local_funcs
+
+    def test_func_with_do_block(self):
+        source = """blockFunc (x) => do
+    return x + 1
+end
+result: blockFunc(5)
+"""
+        local_funcs, param_scopes = Validator._parse_local_functions(source)
+        assert "blockFunc" in local_funcs
+        assert "result" in local_funcs
+
+    def test_func_parses_param_names_with_defaults(self):
+        source = """myFunc: (a, b: "default", c: 123) => do
+    result: a + b + c
+end
+"""
+        local_funcs, param_scopes = Validator._parse_local_functions(source)
+        assert "myFunc" in local_funcs
+        # Check params are tracked correctly
+        assert "a" in param_scopes.get(0, set())
+        assert "b" in param_scopes.get(0, set())
+        assert "c" in param_scopes.get(0, set())
+
 
 class TestValidate:
     def test_reports_undefined_function(self, mock_ls, mock_text_document):

@@ -470,40 +470,61 @@ class Validator:
                 current_params = set()
                 scope_start = -1
 
-            # Match function definitions: name: (args) =>
-            # e.g., definer: (inputFunction, defName) =>
-            # Can be indented (e.g., "        definer: (inputFunction, defName) =>")
-            func_match = re.match(r"^\s*(\w+)\s*:\s*\(([^)]*)\)\s*=>", stripped)
+            # Match function definitions: name: (args) => expr
+            # or name: (args) => do ... end
+            # or name(args) => expr (without colon)
+            # e.g., "helper: (arg1, arg2: \"default\") =>" or "blockFunc (x) => do"
+            func_match = re.match(r"^\s*(\w+)\s*:?\s*\(([^)]*)\)\s*=>", stripped)
             if func_match:
                 func_name = func_match.group(1)
                 params_str = func_match.group(2)
-                declaration = func_match.group(0)
 
-                # Skip if declaration part contains quotes (string literals)
-                # Note: Expression after => may have quotes, which is fine
-                if '"' not in declaration and "'" not in declaration:
+                # Only check the name: part for quotes, not the params or expression
+                # Split at first ( to get just "name:"
+                name_section = stripped.split("(")[0] if "(" in stripped else stripped
+                if '"' not in name_section and "'" not in name_section:
                     local_funcs.add(func_name)
 
                     # Parse parameter names
                     current_params = set()
                     if params_str:
-                        for param in params_str.split(","):
-                            param = param.strip()
+                        # Handle default values with commas by counting parens
+                        depth = 0
+                        param_start = 0
+                        for j, c in enumerate(params_str):
+                            if c == "(":
+                                depth += 1
+                            elif c == ")":
+                                depth -= 1
+                            elif c == "," and depth == 0:
+                                param = params_str[param_start:j].strip()
+                                if param:
+                                    # Extract just the param name (before any : or =)
+                                    param = param.split(":")[0].split("=")[0].strip()
+                                    if param:
+                                        current_params.add(param)
+                                param_start = j + 1
+                        # Last param
+                        if param_start < len(params_str):
+                            param = params_str[param_start:].strip()
                             if param:
-                                current_params.add(param)
+                                param = param.split(":")[0].split("=")[0].strip()
+                                if param:
+                                    current_params.add(param)
 
                     # Start tracking this scope and add params to current line immediately
-                    # (since the function definition line may contain code using params)
                     scope_start = i
                     func_indent = len(line) - len(line.lstrip())
                     param_scopes[i] = current_params.copy()
 
-            # Match lambda expressions assigned to names: name: (args) =>
-            lambda_match = re.match(r"^\s*(\w+)\s*:\s*\(", stripped)
+            # Match lambda expressions assigned to names: name: (args) => expr
+            # or name (args) => do ... end (without colon but with =>)
+            lambda_match = re.match(r"^\s*(\w+)\s*:?\s*\([^)]*\)\s*=>", stripped)
             if lambda_match:
                 func_name = lambda_match.group(1)
-                # Skip if line contains quotes (string literals)
-                if '"' not in stripped and "'" not in stripped:
+                # Check just the name part for quotes
+                name_section = stripped.split("(")[0] if "(" in stripped else stripped
+                if '"' not in name_section and "'" not in name_section:
                     local_funcs.add(func_name)
 
             # Detect any variable declaration (word followed by :)
