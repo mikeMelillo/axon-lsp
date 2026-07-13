@@ -12,7 +12,7 @@
             "outFiles": [
                 "${workspaceFolder}/client/out/**/*.js"
             ],
-            "preLaunchTask": "npm: watch"
+            "preLaunchTask": "build-dev"
         }
     ]
 }

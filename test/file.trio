@@ -15,7 +15,7 @@ src:
     }
         hisRead(point, dates)
         
-
+        myTestFantomFunction(abcd,efg)
         data: [
             {item: 123, funcName: "dontReadMePlease()"},
             {item: 123, funcName: "youShouldntWorkEither(123,456)"},

@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
 const vscode_1 = require("vscode");
 const node_1 = require("vscode-languageclient/node");
 let client;
@@ -43,20 +44,23 @@ function activate(context) {
     // 1. Create the output channel immediately so it appears in the dropdown
     const outputChannel = vscode_1.window.createOutputChannel('Axon Language Server');
     outputChannel.appendLine('Axon Extension Activating...');
-    // 2. Path to the python server script
-    const serverScript = context.asAbsolutePath(path.join('server', 'axon_lsp', 'server.py'));
-    const pythonCommand = process.platform === 'win32' ? 'python' : 'python3';
-    // 3. Server options: how to launch the python process
+    let serverBinary;
+    try {
+        serverBinary = resolveServerBinary(context);
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        outputChannel.appendLine(`Failed to resolve server binary: ${message}`);
+        void vscode_1.window.showErrorMessage(`Axon LSP failed to start: ${message}`);
+        return;
+    }
+    outputChannel.appendLine(`Using server binary: ${serverBinary}`);
+    // 3. Server options: how to launch the Go process
     const serverOptions = {
-        command: pythonCommand,
-        args: [serverScript],
+        command: serverBinary,
+        args: [],
         transport: node_1.TransportKind.stdio,
-        options: {
-            env: {
-                ...process.env,
-                PYTHONUNBUFFERED: "1" // Ensures logs aren't delayed by python's buffer
-            }
-        }
+        options: { env: { ...process.env } }
     };
     // 4. Client options: which files to watch and where to log
     const clientOptions = {
@@ -69,7 +73,19 @@ function activate(context) {
             fileEvents: vscode_1.workspace.createFileSystemWatcher('**/{*.axon,*.trio}')
         },
         outputChannel: outputChannel,
-        traceOutputChannel: vscode_1.window.createOutputChannel('Axon LSP Trace')
+        traceOutputChannel: vscode_1.window.createOutputChannel('Axon LSP Trace'),
+        middleware: {
+            provideDefinition: async (document, position, token, next) => {
+                const result = await next(document, position, token);
+                const locations = Array.isArray(result) ? result : result ? [result] : [];
+                const external = locations.find((item) => item instanceof vscode_1.Location && item.uri.scheme.startsWith('http'));
+                if (external instanceof vscode_1.Location) {
+                    await vscode_1.env.openExternal(external.uri);
+                    return null;
+                }
+                return result;
+            }
+        }
     };
     // 5. Create and start the client
     client = new node_1.LanguageClient('axonLspClient', 'Axon Language Server', serverOptions, clientOptions);
@@ -82,6 +98,34 @@ function activate(context) {
         console.log('OpenExternal called with:', url);
         vscode_1.env.openExternal(vscode_1.Uri.parse(url));
     }));
+}
+function resolveServerBinary(context) {
+    const override = process.env.AXON_LSP_SERVER_PATH;
+    if (override && fs.existsSync(override)) {
+        return override;
+    }
+    const archMap = {
+        x64: 'x64',
+        arm64: 'arm64'
+    };
+    const platformMap = {
+        linux: 'linux',
+        darwin: 'darwin',
+        win32: 'win32'
+    };
+    const arch = archMap[process.arch];
+    const platform = platformMap[process.platform];
+    if (!arch || !platform) {
+        throw new Error(`Unsupported platform: ${process.platform}/${process.arch}`);
+    }
+    const executable = process.platform === 'win32'
+        ? `axon-lsp-${platform}-${arch}.exe`
+        : `axon-lsp-${platform}-${arch}`;
+    const binaryPath = context.asAbsolutePath(path.join('bin', executable));
+    if (!fs.existsSync(binaryPath)) {
+        throw new Error(`server binary not found for ${process.platform}/${process.arch}: ${binaryPath}`);
+    }
+    return binaryPath;
 }
 function deactivate() {
     if (!client) {

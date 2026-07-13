@@ -2,7 +2,7 @@
   "name": "axon-lsp",
   "displayName": "Axon LSP (Project Haystack)",
   "description": "LSP and Syntax Highlighting for the Axon programming language",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "publisher": "mikeMelillo",
   "engines": {
     "vscode": "^1.80.0"
@@ -43,12 +43,15 @@
   },
   "main": "./client/out/extension.js",
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run build:all",
     "compile": "tsc -p ./client",
     "watch": "tsc -watch -p ./client",
     "postinstall": "npm install --prefix client",
-    "package": "vsce package -o build",
-    "publish": "vsce publish"
+    "build:server": "node ./scripts/build-go.mjs",
+    "build:cache": "node ./scripts/build-cache.mjs",
+    "build:all": "npm run compile && npm run build:server",
+    "package": "npm run build:all && vsce package -o build",
+    "publish": "npm run build:all && vsce publish"
   },
   "devDependencies": {
     "@types/node": "^16.11.7",

@@ -1,106 +1,107 @@
 # Axon Language Server (axon-lsp)
 
-> **⚠️ POC Notice**: This extension was built with AI assistance (Gemini + MiniMax) as a proof-of-concept. Use at your own risk. 
+> **POC Notice**: This extension was built with AI assistance and is still evolving quickly. Use it, kick the tires, and expect a few rough edges along the way.
 
+A VS Code extension that provides Language Server Protocol support for the Axon programming language used in SkySpark and Haxall.
 
-A VS Code extension that provides Language Server Protocol (LSP) support for the Axon programming language used in SkySpark and Haxall.
-
-This is my first whirl at publishing a tool like this so -- you've been warned! I'm hoping to get this working reasonably well circa 3.1.12 and then continue to update once we're in 4.0 to make development easier. I think there are some fun opportunities to add type hints, linting, debuggin into VS Code which should make day to day engineering much easier.
+This project is still very much a practical tool built in the open. The near-term goal is to make Axon development in VS Code feel lightweight and dependable around the Haxall 3.1.12 era, while laying the groundwork for the 4.x/Xeto shift that is coming next.
 
 ## Features
 
 - **Autocomplete**: Intelligent code completion for Axon functions
 - **Hover Information**: View function documentation on hover
-- **Go to Definition**: Navigate to function definitions within workspace (links out to core lib & haxall WIP)
+- **Go to Definition**: Navigate to local definitions and known core/external function sources
+- **Signature Help**: See function arguments while typing
+- **References**: Find function usages in the workspace
 - **Diagnostics**: Real-time error detection for undefined functions
 
 ## Installation
 
 ### From Source
+
 ```bash
 # Install dependencies
 npm install
 
+# Optional: refresh bundled core cache
+npm run build:cache
+
 # Package the extension
-npx vsce package
+npm run package
 
 # Install the .vsix file
-code --install-extension axon-lsp-{version}.vsix
+code --install-extension build/axon-lsp-<version>.vsix
 ```
 
 ### From Marketplace
-[Market Place Install](https://marketplace.visualstudio.com/items?itemName=mikeMelillo.axon-lsp)
 
-## Configuration & Dependencies
-
-The server is written in Python on top of pygls (lsprotocol and cattrs are bundled with pygls). Any Python rev newer than 3.11 has ran fine in testing. Pygls should be version 1.3.X. If the server remains in Python I will eventually look at migrating to pygls 2. 
-
-`pip install pygls==1.3.0`
-
-I understand this adds some friction to using the extension, but it allowed for the quickest path to do what really amounts to an experimental / open source project first for my own use. **In the future, I would consider a server rewrite in Go, so if you have opinions there, please reach out.**
-
-Beyond that, there's currently no configuration required. This extension has cached the core haxall & skyspark function library, and syncs automatically with your local working directory. This is nice, because you don't need to have the Haxall repo cloned onto your machine to make use of the extension.
-
-Future versions will support further customization or multiple directory support.
-
-## How It Works
-
-Axon LSP has sourced functions from:
-
-- Your local working directory
-- The open source Haxall Repo
-- Known SkySpark functions (function name & doc string only, no argument hints currently)
-
-The following file types and function types are parsed:
-
-- Support version 3.1.12 only (4.0 future)
-- Supports parsing `func` recs from `.trio` or `@Axon` from `.fan`
-- Supports parsing `defcomp` functions
-- No other file types or recs are read in for LSP caching
-
-## Roadmap
-
-See [ROADMAP.md](./ROADMAP.md) for features under development.
-
-### Note
-
-In the interest of keeping this extension small and (hopefully) fast, I've cached core functions into a small file rather than include the entire haxall repo, or making REST calls out to github to update. For that reason, reference linking to the Haxall core lib functions is not currently supported, exploring the best way to do this in the future (either hyperlink out to github web page at that .fan file or allow user to set directory to a local haxall clone for in-editor loading).
+[Marketplace Install](https://marketplace.visualstudio.com/items?itemName=mikeMelillo.axon-lsp)
 
 ## Requirements
 
 - VS Code 1.80+
-- Python 3.8+
+- No external Python or pip dependencies required
+    - Python server removed as part of v0.2.0
+    - This causes the extension static size to be much larger (~700kB -> 13MB), but the server no longer has external install dependencies
 
-### Python Dependencies
+The language server is bundled as a platform-specific Go binary inside the extension for:
 
-This extension requires Python with the following packages installed:
+- Linux x64 / arm64
+- macOS x64 / arm64
+- Windows x64 / arm64
 
-```bash
-pip install pygls lsprotocol
-```
+## Configuration
 
-**Note:** The extension will attempt to use the Python interpreter configured in your VS Code `python.defaultInterpreterPath` setting. If not configured, it will use the system default Python.
+The extension works out of the box with its bundled function cache and workspace scanning.
 
-#### Setting Python Path in VS Code
+Available settings:
 
-If the extension cannot find Python, configure it in your VS Code settings:
+- `axonLsp.haxallPaths`: paths to Haxall installations or source trees
+- `axonLsp.externalPaths`: additional directories to scan for Axon functions
 
-1. Open **Settings** (Ctrl+, or Cmd+, on Mac)
-2. Search for `python.defaultInterpreterPath`
-3. Set the path to your Python interpreter (e.g., `/usr/bin/python3` or `C:\Python312\python.exe`)
+## How It Works
 
-Alternatively, the extension will automatically detect Python from common locations.
+Axon LSP currently sources functions from:
+
+- your local working directory
+- the open source Haxall repo cache bundled with the extension
+- known SkySpark/core function metadata captured in the cache (this is a convenience to support some built in @noDoc functions)
+
+The current parser/indexer supports:
+
+- Haxall 3.1.12-oriented workflows today
+- `func` records in `.trio`
+- `@Axon` definitions in `.fan`
+- `defcomp` functions
+
+The extension keeps a compact cached backstop rather than shipping the full Haxall source tree, which keeps installs smaller and startup more predictable.
 
 ## Building
 
 ```bash
-# Development
-npm run dev
+# Refresh the bundled function cache
+npm run build:cache
 
-# Build extension
-npx vsce package
+# Compile the extension and all Go server binaries
+npm run build:all
+
+# Package a full VSIX in ./build
+npm run package
 ```
+
+### Local Debugging
+
+- `Run Extension` in `.vscode/launch.json` builds the Go server first, then starts the TypeScript watch task.
+- You can override the binary used at runtime with `AXON_LSP_SERVER_PATH` if you want to point the extension at a custom local build.
+
+## Roadmap
+
+See [ROADMAP.md](./ROADMAP.md) for the current plan.
 
 ## License
 
 MIT License - see [LICENSE](./LICENSE) file.
+
+## Note
+
+Earlier versions of this project used a Python `pygls` server as a quick way to get the extension off the ground. The supported runtime is now the bundled Go server.

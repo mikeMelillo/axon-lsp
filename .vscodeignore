@@ -1,7 +1,13 @@
 .git
 .gitignore
 .node_modules
+.pytest_cache/
+.pytest_cache/**
+.ruff_cache/
+.ruff_cache/**
 .vscode-test*
+.vscode/
+.vscode/**
 src
 test
 *.ts
@@ -24,3 +30,11 @@ build_utils/
 .env
 tests/
 test/
+go-server/
+scripts/
+server/
+client/src/
+client/src/**
+client/package.json
+client/package-lock.json
+client/tsconfig.json

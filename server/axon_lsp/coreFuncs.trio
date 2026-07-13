@@ -1,3 +1,8 @@
+name:diags
+doc:
+    Returns diagnostics feed for OS telemetry
+
+---
 name:Span
 doc:
     Utility function for calling Span in views
