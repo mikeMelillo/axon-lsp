@@ -53,6 +53,31 @@ src:
 	}
 }
 
+func TestParseMultipleRecordsTracksAbsoluteLineNumbers(t *testing.T) {
+	t.Parallel()
+	source := `name: first
+func
+doc: "First"
+src:
+    () => do end
+---
+name: second
+func
+doc: "Second"
+src:
+    () => do end
+`
+	path := writeTempFile(t, "multiple.trio", source)
+	result := ParseFile(path)
+	fn, ok := result["second"]
+	if !ok {
+		t.Fatal("expected second to be parsed")
+	}
+	if fn.StartLine != 6 {
+		t.Fatalf("expected second to start on line 6, got %d", fn.StartLine)
+	}
+}
+
 func writeTempFile(t *testing.T, name, content string) string {
 	t.Helper()
 	dir := t.TempDir()

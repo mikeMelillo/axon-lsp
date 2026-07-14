@@ -76,12 +76,14 @@ func (s *Server) handle(msg requestMessage) error {
 		s.manager = manager
 		return s.writeResponse(msg.ID, initializeResult{
 			Capabilities: serverCapabilities{
-				TextDocumentSync:      textDocumentSyncOptions{OpenClose: true, Change: 1, Save: saveOptions{IncludeText: false}},
-				DefinitionProvider:    true,
-				HoverProvider:         true,
-				ReferencesProvider:    true,
-				CompletionProvider:    completionOptions{ResolveProvider: false, TriggerCharacters: []string{"(", ":"}},
-				SignatureHelpProvider: signatureHelpOptions{TriggerCharacters: []string{"("}},
+				TextDocumentSync:        textDocumentSyncOptions{OpenClose: true, Change: 1, Save: saveOptions{IncludeText: false}},
+				DefinitionProvider:      true,
+				HoverProvider:           true,
+				ReferencesProvider:      true,
+				CompletionProvider:      completionOptions{ResolveProvider: false, TriggerCharacters: []string{"(", ":"}},
+				SignatureHelpProvider:   signatureHelpOptions{TriggerCharacters: []string{"("}},
+				DocumentSymbolProvider:  true,
+				WorkspaceSymbolProvider: true,
 			},
 			ServerInfo: serverInfo{Name: "axon-lsp-go", Version: Version},
 		}, nil)
@@ -101,6 +103,9 @@ func (s *Server) handle(msg requestMessage) error {
 			return err
 		}
 		s.setDocument(params.TextDocument.URI, params.TextDocument.Text)
+		if s.manager != nil {
+			s.manager.UpdateDocument(params.TextDocument.URI, params.TextDocument.Text)
+		}
 		return s.publishDiagnostics(params.TextDocument.URI)
 	case "textDocument/didChange":
 		var params didChangeParams
@@ -109,6 +114,9 @@ func (s *Server) handle(msg requestMessage) error {
 		}
 		if len(params.ContentChanges) > 0 {
 			s.setDocument(params.TextDocument.URI, params.ContentChanges[len(params.ContentChanges)-1].Text)
+			if s.manager != nil {
+				s.manager.UpdateDocument(params.TextDocument.URI, params.ContentChanges[len(params.ContentChanges)-1].Text)
+			}
 		}
 		return s.publishDiagnostics(params.TextDocument.URI)
 	case "textDocument/didSave":
@@ -116,8 +124,12 @@ func (s *Server) handle(msg requestMessage) error {
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
 			return err
 		}
-		if s.manager != nil && s.rootPath != "" {
-			s.manager.UpdateLocalIndex(s.rootPath)
+		if s.manager != nil {
+			if doc, ok := s.document(params.TextDocument.URI); ok {
+				s.manager.UpdateDocument(params.TextDocument.URI, doc)
+			} else if content, err := os.ReadFile(pathFromURI(params.TextDocument.URI)); err == nil {
+				s.manager.UpdateDocument(params.TextDocument.URI, string(content))
+			}
 		}
 		return s.publishDiagnostics(params.TextDocument.URI)
 	case "textDocument/completion":
@@ -133,12 +145,38 @@ func (s *Server) handle(msg requestMessage) error {
 		return s.handleSignatureHelp(msg)
 	case "textDocument/references":
 		return s.handleReferences(msg)
+	case "textDocument/documentSymbol":
+		return s.handleDocumentSymbols(msg)
+	case "workspace/symbol":
+		return s.handleWorkspaceSymbols(msg)
 	default:
 		if len(msg.ID) > 0 {
 			return s.writeResponse(msg.ID, nil, &responseError{Code: -32601, Message: "method not found"})
 		}
 		return nil
 	}
+}
+
+func (s *Server) handleDocumentSymbols(msg requestMessage) error {
+	if s.manager == nil {
+		return s.writeResponse(msg.ID, []index.DocumentSymbol{}, nil)
+	}
+	var params documentSymbolParams
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		return err
+	}
+	return s.writeResponse(msg.ID, s.manager.GetDocumentSymbols(params.TextDocument.URI), nil)
+}
+
+func (s *Server) handleWorkspaceSymbols(msg requestMessage) error {
+	if s.manager == nil {
+		return s.writeResponse(msg.ID, []index.WorkspaceSymbol{}, nil)
+	}
+	var params workspaceSymbolParams
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		return err
+	}
+	return s.writeResponse(msg.ID, s.manager.GetWorkspaceSymbols(params.Query), nil)
 }
 
 func (s *Server) handleDefinition(msg requestMessage) error {
@@ -180,10 +218,9 @@ func (s *Server) handleHover(msg requestMessage) error {
 	if !found {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
-	return s.writeResponse(msg.ID, index.Hover{Contents: index.MarkupContent{
-		Kind:  "markdown",
-		Value: fmt.Sprintf("**%s%s**\n\n---\n\n%s", fn.Name, fn.ArgsStr, fn.Doc),
-	}}, nil)
+	_ = fn
+	hover := s.manager.BuildHover(match.Word)
+	return s.writeResponse(msg.ID, hover, nil)
 }
 
 func (s *Server) handleSignatureHelp(msg requestMessage) error {

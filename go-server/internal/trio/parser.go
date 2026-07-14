@@ -23,6 +23,11 @@ type ParsedFunction struct {
 	EndChar    int
 }
 
+type recordChunk struct {
+	content   string
+	startLine int
+}
+
 var (
 	tagPattern  = regexp.MustCompile(`^([a-zA-Z0-9_]+):(.*)`)
 	argsPattern = regexp.MustCompile(`(?m)^\s*\((.*?)\)\s*=>`)
@@ -33,17 +38,19 @@ func ParseFile(path string) map[string]ParsedFunction {
 	if err != nil {
 		return map[string]ParsedFunction{}
 	}
-	return ParseContent(path, string(content))
+	return ParseURIContent(fileURI(path), string(content))
 }
 
 func ParseContent(path, content string) map[string]ParsedFunction {
-	uri := fileURI(path)
+	return ParseURIContent(fileURI(path), content)
+}
+
+func ParseURIContent(uri, content string) map[string]ParsedFunction {
 	records := splitRecords(content)
 	found := make(map[string]ParsedFunction)
-	currentLine := 0
 
 	for _, record := range records {
-		lines := strings.Split(record, "\n")
+		lines := strings.Split(record.content, "\n")
 		tags := map[string]string{}
 		nameLineOffset := 0
 		nameCharOffset := 0
@@ -72,7 +79,6 @@ func ParseContent(path, content string) map[string]ParsedFunction {
 		}
 
 		if tags["func"] == "" || tags["name"] == "" {
-			currentLine += len(lines)
 			continue
 		}
 
@@ -93,9 +99,9 @@ func ParseContent(path, content string) map[string]ParsedFunction {
 			Parameters:     params,
 			Signature:      argsStr,
 			ReturnType:     returnType,
-			StartLine:      currentLine + nameLineOffset,
+			StartLine:      record.startLine + nameLineOffset,
 			StartCharacter: max(nameCharOffset, 0),
-			EndLine:        currentLine + nameLineOffset,
+			EndLine:        record.startLine + nameLineOffset,
 			EndCharacter:   max(nameCharOffset, 0) + len(name),
 		}
 		found[name] = ParsedFunction{
@@ -111,25 +117,29 @@ func ParseContent(path, content string) map[string]ParsedFunction {
 			EndLine:    decl.EndLine,
 			EndChar:    decl.EndCharacter,
 		}
-		currentLine += len(lines)
 	}
 
 	return found
 }
 
-func splitRecords(content string) []string {
+func splitRecords(content string) []recordChunk {
 	lines := strings.Split(content, "\n")
-	parts := make([]string, 0, 4)
+	parts := make([]recordChunk, 0, 4)
 	current := make([]string, 0, len(lines))
+	currentStartLine := 0
 	flush := func() {
-		parts = append(parts, strings.Join(current, "\n"))
+		parts = append(parts, recordChunk{content: strings.Join(current, "\n"), startLine: currentStartLine})
 		current = current[:0]
 	}
-	for _, line := range lines {
+	for idx, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed != "" && strings.Trim(trimmed, "-") == "" && len(trimmed) >= 3 {
 			flush()
+			currentStartLine = idx + 1
 			continue
+		}
+		if len(current) == 0 {
+			currentStartLine = idx
 		}
 		current = append(current, line)
 	}

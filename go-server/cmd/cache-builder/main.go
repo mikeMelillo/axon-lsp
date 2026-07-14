@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/fantom"
@@ -13,7 +14,16 @@ import (
 )
 
 type location struct {
-	URI string `json:"uri"`
+	URI   string `json:"uri"`
+	Range *struct {
+		Start position `json:"start"`
+		End   position `json:"end"`
+	} `json:"range,omitempty"`
+}
+
+type position struct {
+	Line      int `json:"line"`
+	Character int `json:"character"`
 }
 
 type serializedFunction struct {
@@ -64,7 +74,13 @@ func main() {
 	})
 
 	list := make([]serializedFunction, 0, len(functions))
-	for _, fn := range functions {
+	keys := make([]string, 0, len(functions))
+	for name := range functions {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	for _, name := range keys {
+		fn := functions[name]
 		list = append(list, fn)
 	}
 	data, err := json.MarshalIndent(list, "", "  ")
@@ -95,7 +111,7 @@ func serializeTrio(fn trio.ParsedFunction, githubBase, localPrefix string) seria
 		ArgsStr:  fn.ArgsStr,
 		Params:   fn.Params,
 		Kind:     fn.Kind,
-		Location: serializeLocation(fn.URI, githubBase, localPrefix),
+		Location: serializeLocationWithRange(fn.URI, fn.StartLine, fn.StartChar, fn.EndLine, fn.EndChar, githubBase, localPrefix),
 	}
 }
 
@@ -106,22 +122,40 @@ func serializeFantom(fn fantom.ParsedFunction, githubBase, localPrefix string) s
 		ArgsStr:  fn.ArgsStr,
 		Params:   fn.Params,
 		Kind:     fn.Kind,
-		Location: serializeLocation(fn.URI, githubBase, localPrefix),
+		Location: serializeLocationWithRange(fn.URI, fn.StartLine, fn.StartChar, fn.EndLine, fn.EndChar, githubBase, localPrefix),
 	}
 }
 
-func serializeLocation(uri, githubBase, localPrefix string) *location {
+func serializeLocationWithRange(uri string, startLine, startChar, endLine, endChar int, githubBase, localPrefix string) *location {
 	if uri == "" {
 		return nil
 	}
 	if strings.HasSuffix(uri, "coreFuncs.trio") {
-		return &location{URI: "axon-ext://coreFuncs.trio"}
+		return &location{URI: "axon-ext://coreFuncs.trio", Range: &struct {
+			Start position `json:"start"`
+			End   position `json:"end"`
+		}{
+			Start: position{Line: startLine, Character: startChar},
+			End:   position{Line: endLine, Character: endChar},
+		}}
 	}
 	if githubBase != "" && localPrefix != "" {
 		prefix := "file://" + filepath.ToSlash(localPrefix)
 		if strings.HasPrefix(uri, prefix) {
-			return &location{URI: strings.TrimRight(githubBase, "/") + "/" + strings.TrimPrefix(uri, prefix+"/")}
+			return &location{URI: strings.TrimRight(githubBase, "/") + "/" + strings.TrimPrefix(uri, prefix+"/"), Range: &struct {
+				Start position `json:"start"`
+				End   position `json:"end"`
+			}{
+				Start: position{Line: startLine, Character: startChar},
+				End:   position{Line: endLine, Character: endChar},
+			}}
 		}
 	}
-	return &location{URI: uri}
+	return &location{URI: uri, Range: &struct {
+		Start position `json:"start"`
+		End   position `json:"end"`
+	}{
+		Start: position{Line: startLine, Character: startChar},
+		End:   position{Line: endLine, Character: endChar},
+	}}
 }

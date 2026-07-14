@@ -31,4 +31,7 @@ static Dict myTestFantomFunction(Dict arg1, Dict arg2) {
 	if fn.Doc == "No documentation available." {
 		t.Fatal("expected doc comments to be captured")
 	}
+	if fn.StartLine != 4 || fn.StartChar != 12 {
+		t.Fatalf("unexpected start location: %d:%d", fn.StartLine, fn.StartChar)
+	}
 }

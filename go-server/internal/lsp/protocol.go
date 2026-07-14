@@ -65,6 +65,13 @@ type definitionParams = textDocumentPositionParams
 type hoverParams = textDocumentPositionParams
 type signatureHelpParams = textDocumentPositionParams
 type referenceParams = textDocumentPositionParams
+type documentSymbolParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+}
+
+type workspaceSymbolParams struct {
+	Query string `json:"query"`
+}
 
 type publishDiagnosticsParams struct {
 	URI         string             `json:"uri"`
@@ -82,13 +89,14 @@ type serverInfo struct {
 }
 
 type serverCapabilities struct {
-	TextDocumentSync       textDocumentSyncOptions `json:"textDocumentSync"`
-	DefinitionProvider     bool                    `json:"definitionProvider"`
-	HoverProvider          bool                    `json:"hoverProvider"`
-	ReferencesProvider     bool                    `json:"referencesProvider"`
-	CompletionProvider     completionOptions       `json:"completionProvider"`
-	SignatureHelpProvider  signatureHelpOptions    `json:"signatureHelpProvider"`
-	DocumentSymbolProvider bool                    `json:"documentSymbolProvider,omitempty"`
+	TextDocumentSync        textDocumentSyncOptions `json:"textDocumentSync"`
+	DefinitionProvider      bool                    `json:"definitionProvider"`
+	HoverProvider           bool                    `json:"hoverProvider"`
+	ReferencesProvider      bool                    `json:"referencesProvider"`
+	CompletionProvider      completionOptions       `json:"completionProvider"`
+	SignatureHelpProvider   signatureHelpOptions    `json:"signatureHelpProvider"`
+	DocumentSymbolProvider  bool                    `json:"documentSymbolProvider,omitempty"`
+	WorkspaceSymbolProvider bool                    `json:"workspaceSymbolProvider,omitempty"`
 }
 
 type textDocumentSyncOptions struct {

@@ -42,6 +42,22 @@ type Symbol struct {
 	Origin     SymbolOrigin
 }
 
+type DocumentSymbol struct {
+	Name           string      `json:"name"`
+	Detail         string      `json:"detail,omitempty"`
+	Kind           int         `json:"kind"`
+	Range          Range       `json:"range"`
+	SelectionRange Range       `json:"selectionRange"`
+	Children       interface{} `json:"children,omitempty"`
+}
+
+type WorkspaceSymbol struct {
+	Name     string   `json:"name"`
+	Kind     int      `json:"kind"`
+	Location Location `json:"location"`
+	Detail   string   `json:"detail,omitempty"`
+}
+
 type CompletionItem struct {
 	Label         string      `json:"label"`
 	Kind          int         `json:"kind,omitempty"`

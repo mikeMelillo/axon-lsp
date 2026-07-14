@@ -9,7 +9,18 @@ import (
 )
 
 type serializedLocation struct {
-	URI string `json:"uri"`
+	URI   string           `json:"uri"`
+	Range *serializedRange `json:"range,omitempty"`
+}
+
+type serializedPosition struct {
+	Line      int `json:"line"`
+	Character int `json:"character"`
+}
+
+type serializedRange struct {
+	Start serializedPosition `json:"start"`
+	End   serializedPosition `json:"end"`
 }
 
 type serializedFunction struct {
@@ -28,6 +39,7 @@ type FunctionData struct {
 	Params      []string
 	Kind        int
 	LocationURI string
+	Range       serializedRange
 }
 
 func LoadEmbeddedFunctions() (map[string]FunctionData, error) {
@@ -43,11 +55,12 @@ func LoadEmbeddedFunctions() (map[string]FunctionData, error) {
 		}
 		functions[fn.Name] = FunctionData{
 			Name:        fn.Name,
-			Doc:         fn.Doc,
+			Doc:         strings.TrimSpace(fn.Doc),
 			ArgsStr:     defaultArgs(fn.ArgsStr),
 			Params:      fn.Params,
 			Kind:        fn.Kind,
 			LocationURI: deserializeLocationURI(fn.Location),
+			Range:       deserializeRange(fn.Location),
 		}
 	}
 	return functions, nil
@@ -69,6 +82,13 @@ func deserializeLocationURI(loc *serializedLocation) string {
 		uri = embeddedCoreURI()
 	}
 	return uri
+}
+
+func deserializeRange(loc *serializedLocation) serializedRange {
+	if loc == nil || loc.Range == nil {
+		return serializedRange{}
+	}
+	return *loc.Range
 }
 
 func embeddedCoreURI() string {
