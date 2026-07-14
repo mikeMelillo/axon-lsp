@@ -39,11 +39,16 @@ export function activate(context: ExtensionContext) {
     const clientOptions: LanguageClientOptions = {
         // Must match the language ID in package.json
         documentSelector: [
-            { scheme: 'file', language: 'axon' }
+            { scheme: 'file', language: 'axon' },
+            { scheme: 'file', language: 'fantom' },
+            { scheme: 'file', pattern: '**/*.fan' }
         ],
+        initializationOptions: {
+            settings: getServerSettings()
+        },
         synchronize: {
             // Notify the server about file changes in the workspace
-            fileEvents: workspace.createFileSystemWatcher('**/{*.axon,*.trio}')
+            fileEvents: workspace.createFileSystemWatcher('**/{*.axon,*.trio,*.fan}')
         },
         outputChannel: outputChannel,
         traceOutputChannel: window.createOutputChannel('Axon LSP Trace'),
@@ -74,6 +79,15 @@ export function activate(context: ExtensionContext) {
         outputChannel.appendLine(`Failed to start client: ${err}`);
     });
 
+    context.subscriptions.push(workspace.onDidChangeConfiguration(event => {
+        if (!event.affectsConfiguration('axonLsp')) {
+            return;
+        }
+        void client.sendNotification('workspace/didChangeConfiguration', {
+            settings: getServerSettings()
+        });
+    }));
+
     // 6. Register command to open external URLs in browser
     context.subscriptions.push(
         commands.registerCommand('extension.openExternal', (url: string) => {
@@ -81,6 +95,27 @@ export function activate(context: ExtensionContext) {
             env.openExternal(Uri.parse(url));
         })
     );
+}
+
+function getServerSettings(): { haxallPaths: string[]; externalPaths: string[] } {
+    const config = workspace.getConfiguration('axonLsp');
+    const workspaceRoot = workspace.workspaceFolders?.[0]?.uri.fsPath;
+    return {
+        haxallPaths: normalizeConfiguredPaths(config.get<string[]>('haxallPaths', []), workspaceRoot),
+        externalPaths: normalizeConfiguredPaths(config.get<string[]>('externalPaths', []), workspaceRoot)
+    };
+}
+
+function normalizeConfiguredPaths(paths: string[], workspaceRoot?: string): string[] {
+    return paths
+        .map(value => value.trim())
+        .filter(Boolean)
+        .map(value => {
+            if (path.isAbsolute(value) || !workspaceRoot) {
+                return value;
+            }
+            return path.resolve(workspaceRoot, value);
+        });
 }
 
 function resolveServerBinary(context: ExtensionContext): string {

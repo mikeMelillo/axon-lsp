@@ -1,3 +1,8 @@
+name:yield
+doc:
+    Internal func to yield history data for a hisFunc in computed histories
+
+---
 name:diags
 doc:
     Returns diagnostics feed for OS telemetry

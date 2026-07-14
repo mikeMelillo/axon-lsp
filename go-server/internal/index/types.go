@@ -40,6 +40,20 @@ type Symbol struct {
 	ItemKind   int
 	Location   *Location
 	Origin     SymbolOrigin
+	SourceRoot string
+}
+
+type ScanRootKind string
+
+const (
+	ScanRootHaxall   ScanRootKind = "haxall"
+	ScanRootExternal ScanRootKind = "external"
+)
+
+type ScanRoot struct {
+	Path  string
+	Kind  ScanRootKind
+	Label string
 }
 
 type DocumentSymbol struct {

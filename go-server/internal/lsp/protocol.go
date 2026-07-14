@@ -21,8 +21,18 @@ type responseError struct {
 }
 
 type initializeParams struct {
-	RootURI  string `json:"rootUri"`
-	RootPath string `json:"rootPath"`
+	RootURI               string                 `json:"rootUri"`
+	RootPath              string                 `json:"rootPath"`
+	InitializationOptions *initializationOptions `json:"initializationOptions,omitempty"`
+}
+
+type initializationOptions struct {
+	Settings settingsPayload `json:"settings"`
+}
+
+type settingsPayload struct {
+	HaxallPaths   []string `json:"haxallPaths"`
+	ExternalPaths []string `json:"externalPaths"`
 }
 
 type textDocumentIdentifier struct {
@@ -69,8 +79,27 @@ type documentSymbolParams struct {
 	TextDocument textDocumentIdentifier `json:"textDocument"`
 }
 
+type rangeParams struct {
+	Start index.Position `json:"start"`
+	End   index.Position `json:"end"`
+}
+
 type workspaceSymbolParams struct {
 	Query string `json:"query"`
+}
+
+type codeActionParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Range        rangeParams            `json:"range"`
+	Context      codeActionContext      `json:"context"`
+}
+
+type codeActionContext struct {
+	Diagnostics []index.Diagnostic `json:"diagnostics"`
+}
+
+type didChangeConfigurationParams struct {
+	Settings settingsPayload `json:"settings"`
 }
 
 type publishDiagnosticsParams struct {
@@ -97,6 +126,7 @@ type serverCapabilities struct {
 	SignatureHelpProvider   signatureHelpOptions    `json:"signatureHelpProvider"`
 	DocumentSymbolProvider  bool                    `json:"documentSymbolProvider,omitempty"`
 	WorkspaceSymbolProvider bool                    `json:"workspaceSymbolProvider,omitempty"`
+	CodeActionProvider      bool                    `json:"codeActionProvider,omitempty"`
 }
 
 type textDocumentSyncOptions struct {
@@ -118,4 +148,19 @@ type completionOptions struct {
 
 type signatureHelpOptions struct {
 	TriggerCharacters []string `json:"triggerCharacters"`
+}
+
+type textEdit struct {
+	Range   rangeParams `json:"range"`
+	NewText string      `json:"newText"`
+}
+
+type workspaceEdit struct {
+	Changes map[string][]textEdit `json:"changes,omitempty"`
+}
+
+type codeAction struct {
+	Title string        `json:"title"`
+	Kind  string        `json:"kind,omitempty"`
+	Edit  workspaceEdit `json:"edit,omitempty"`
 }

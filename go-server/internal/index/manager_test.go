@@ -1,6 +1,8 @@
 package index
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -80,6 +82,64 @@ src:
 	}
 	if loc.URI != "file:///workspace/read.trio" {
 		t.Fatalf("expected workspace definition to win, got %q", loc.URI)
+	}
+}
+
+func TestExtraRootsProvideDefinitionsAndHoverSource(t *testing.T) {
+	t.Parallel()
+	mgr, err := NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	path := filepath.Join(root, "src", "lib", "fan", "ExtraFuncs.fan")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`**
+** Extra docs
+**
+@Axon
+static Dict extraFunc(Dict arg1) {
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr.SetExtraRoots([]ScanRoot{{Path: root, Kind: ScanRootHaxall}})
+	loc := mgr.GetDefinition("extraFunc")
+	if loc == nil || loc.URI == "" {
+		t.Fatal("expected definition for extra root symbol")
+	}
+	hover := mgr.BuildHover("extraFunc")
+	if hover == nil || !strings.Contains(hover.Contents.Value, "haxallPaths:") {
+		t.Fatalf("expected hover to include haxall root source, got %q", hover.Contents.Value)
+	}
+}
+
+func TestWorkspaceDefinitionsBeatExtraRoots(t *testing.T) {
+	t.Parallel()
+	mgr, err := NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	path := filepath.Join(root, "lib.trio")
+	if err := os.WriteFile(path, []byte(`name: sharedFunc
+func
+src:
+    () => do end
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr.SetExtraRoots([]ScanRoot{{Path: root, Kind: ScanRootExternal}})
+	mgr.UpdateDocument("file:///workspace/shared.trio", `name: sharedFunc
+func
+src:
+    () => do end
+`)
+	loc := mgr.GetDefinition("sharedFunc")
+	if loc == nil || loc.URI != "file:///workspace/shared.trio" {
+		t.Fatalf("expected workspace definition precedence, got %#v", loc)
 	}
 }
 

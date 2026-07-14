@@ -2,7 +2,7 @@
   "name": "axon-lsp",
   "displayName": "Axon LSP (Project Haystack)",
   "description": "LSP and Syntax Highlighting for the Axon programming language",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "publisher": "mikeMelillo",
   "engines": {
     "vscode": "^1.80.0"
@@ -17,6 +17,11 @@
         "aliases": ["Axon", "axon"],
         "extensions": [".axon", ".trio"],
         "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "fantom",
+        "aliases": ["Fantom", "fantom"],
+        "extensions": [".fan"]
       }
     ],
     "configuration": {
@@ -25,12 +30,12 @@
         "axonLsp.haxallPaths": {
           "type": "array",
           "default": [],
-          "description": "Paths to Haxall installation directories (clone from https://github.com/haxall/haxall/tree/3.1.12)"
+          "description": "Paths to Haxall installation directories or clone roots. Scanned recursively up to 4 directory levels for .trio, .axon, and .fan sources."
         },
         "axonLsp.externalPaths": {
           "type": "array",
           "default": [],
-          "description": "Additional paths to scan for Axon functions (for supporting your local codebase outside of current working directory)"
+          "description": "Additional paths to scan for Axon functions outside the current workspace. Scanned recursively up to 4 directory levels."
         }
       }
     },
@@ -49,6 +54,8 @@
     "postinstall": "npm install --prefix client",
     "build:server": "node ./scripts/build-go.mjs",
     "build:cache": "node ./scripts/build-cache.mjs",
+    "test:go": "sh -c 'cd go-server && go test ./...'",
+    "bench:go": "sh -c 'cd go-server && go test -run ^$ -bench . -benchmem ./internal/index'",
     "build:all": "npm run compile && npm run build:server",
     "package": "npm run build:all && vsce package -o build",
     "publish": "npm run build:all && vsce publish"

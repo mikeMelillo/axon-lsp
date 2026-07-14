@@ -27,6 +27,7 @@ type Server struct {
 	documents   map[string]string
 	rootPath    string
 	manager     *index.Manager
+	settings    settingsPayload
 	shutdown    bool
 }
 
@@ -74,6 +75,9 @@ func (s *Server) handle(msg requestMessage) error {
 			return err
 		}
 		s.manager = manager
+		if params.InitializationOptions != nil {
+			s.settings = params.InitializationOptions.Settings
+		}
 		return s.writeResponse(msg.ID, initializeResult{
 			Capabilities: serverCapabilities{
 				TextDocumentSync:        textDocumentSyncOptions{OpenClose: true, Change: 1, Save: saveOptions{IncludeText: false}},
@@ -84,12 +88,24 @@ func (s *Server) handle(msg requestMessage) error {
 				SignatureHelpProvider:   signatureHelpOptions{TriggerCharacters: []string{"("}},
 				DocumentSymbolProvider:  true,
 				WorkspaceSymbolProvider: true,
+				CodeActionProvider:      true,
 			},
 			ServerInfo: serverInfo{Name: "axon-lsp-go", Version: Version},
 		}, nil)
 	case "initialized":
 		if s.manager != nil && s.rootPath != "" {
 			s.manager.UpdateLocalIndex(s.rootPath)
+			s.manager.SetExtraRoots(scanRootsFromSettings(s.settings))
+		}
+		return nil
+	case "workspace/didChangeConfiguration":
+		var params didChangeConfigurationParams
+		if err := json.Unmarshal(msg.Params, &params); err != nil {
+			return err
+		}
+		s.settings = params.Settings
+		if s.manager != nil {
+			s.manager.SetExtraRoots(scanRootsFromSettings(params.Settings))
 		}
 		return nil
 	case "shutdown":
@@ -149,12 +165,59 @@ func (s *Server) handle(msg requestMessage) error {
 		return s.handleDocumentSymbols(msg)
 	case "workspace/symbol":
 		return s.handleWorkspaceSymbols(msg)
+	case "textDocument/codeAction":
+		return s.handleCodeAction(msg)
 	default:
 		if len(msg.ID) > 0 {
 			return s.writeResponse(msg.ID, nil, &responseError{Code: -32601, Message: "method not found"})
 		}
 		return nil
 	}
+}
+
+func (s *Server) handleCodeAction(msg requestMessage) error {
+	var params codeActionParams
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		return err
+	}
+	line, ok := s.lineAt(params.TextDocument.URI, params.Range.Start.Line)
+	if !ok {
+		return s.writeResponse(msg.ID, []codeAction{}, nil)
+	}
+	if strings.Contains(line, "//lspignore") {
+		return s.writeResponse(msg.ID, []codeAction{}, nil)
+	}
+	for _, diagnostic := range params.Context.Diagnostics {
+		if !strings.HasPrefix(diagnostic.Message, "Undefined function:") {
+			continue
+		}
+		action := codeAction{
+			Title: "Ignore this line with //lspignore",
+			Kind:  "quickfix",
+			Edit: workspaceEdit{Changes: map[string][]textEdit{
+				params.TextDocument.URI: {{
+					Range: rangeParams{
+						Start: index.Position{Line: params.Range.Start.Line, Character: len(line)},
+						End:   index.Position{Line: params.Range.Start.Line, Character: len(line)},
+					},
+					NewText: " //lspignore",
+				}},
+			}},
+		}
+		return s.writeResponse(msg.ID, []codeAction{action}, nil)
+	}
+	return s.writeResponse(msg.ID, []codeAction{}, nil)
+}
+
+func scanRootsFromSettings(settings settingsPayload) []index.ScanRoot {
+	roots := make([]index.ScanRoot, 0, len(settings.HaxallPaths)+len(settings.ExternalPaths))
+	for _, path := range settings.HaxallPaths {
+		roots = append(roots, index.ScanRoot{Path: path, Kind: index.ScanRootHaxall})
+	}
+	for _, path := range settings.ExternalPaths {
+		roots = append(roots, index.ScanRoot{Path: path, Kind: index.ScanRootExternal})
+	}
+	return roots
 }
 
 func (s *Server) handleDocumentSymbols(msg requestMessage) error {

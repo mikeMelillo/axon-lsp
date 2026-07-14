@@ -59,6 +59,12 @@ Available settings:
 - `axonLsp.haxallPaths`: paths to Haxall installations or source trees
 - `axonLsp.externalPaths`: additional directories to scan for Axon functions
 
+Notes:
+
+- Both settings are indexed recursively up to 4 directory levels below each configured root.
+- `axonLsp.haxallPaths` can point at a Haxall-style clone root; the server will walk down into likely source folders as long as they fall within that depth budget.
+- If the same function exists in multiple places, the extension prefers workspace definitions first, then configured extra roots, then the bundled core cache.
+
 ## How It Works
 
 Axon LSP currently sources functions from:

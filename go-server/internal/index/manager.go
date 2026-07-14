@@ -12,16 +12,22 @@ import (
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/trio"
 )
 
-const symbolKindFunction = 12
+const (
+	symbolKindFunction = 12
+	maxScanDepth       = 4
+)
 
 type Manager struct {
-	mu              sync.RWMutex
-	CoreFuncs       map[string]Symbol
-	ExternalFuncs   map[string]Symbol
-	LocalFuncs      map[string]Symbol
-	ReferencesMap   map[string][]Location
-	fileSymbols     map[string]map[string]Symbol
-	documentSymbols map[string][]DocumentSymbol
+	mu                   sync.RWMutex
+	CoreFuncs            map[string]Symbol
+	ExternalFuncs        map[string]Symbol
+	LocalFuncs           map[string]Symbol
+	ReferencesMap        map[string][]Location
+	workspaceFileSymbols map[string]map[string]Symbol
+	externalFileSymbols  map[string]map[string]Symbol
+	documentSymbols      map[string][]DocumentSymbol
+	workspaceRoot        string
+	extraRoots           []ScanRoot
 }
 
 func NewManager() (*Manager, error) {
@@ -39,23 +45,25 @@ func NewManager() (*Manager, error) {
 			}}
 		}
 		coreSymbols[name] = Symbol{
-			Name:     fn.Name,
-			Kind:     KindFunction,
-			Doc:      normalizedDoc(fn.Doc),
-			ArgsStr:  fn.ArgsStr,
-			Params:   fn.Params,
-			ItemKind: fn.Kind,
-			Location: loc,
-			Origin:   OriginCore,
+			Name:       fn.Name,
+			Kind:       KindFunction,
+			Doc:        normalizedDoc(fn.Doc),
+			ArgsStr:    fn.ArgsStr,
+			Params:     fn.Params,
+			ItemKind:   fn.Kind,
+			Location:   loc,
+			Origin:     OriginCore,
+			SourceRoot: "bundled core",
 		}
 	}
 	return &Manager{
-		CoreFuncs:       coreSymbols,
-		ExternalFuncs:   map[string]Symbol{},
-		LocalFuncs:      map[string]Symbol{},
-		ReferencesMap:   map[string][]Location{},
-		fileSymbols:     map[string]map[string]Symbol{},
-		documentSymbols: map[string][]DocumentSymbol{},
+		CoreFuncs:            coreSymbols,
+		ExternalFuncs:        map[string]Symbol{},
+		LocalFuncs:           map[string]Symbol{},
+		ReferencesMap:        map[string][]Location{},
+		workspaceFileSymbols: map[string]map[string]Symbol{},
+		externalFileSymbols:  map[string]map[string]Symbol{},
+		documentSymbols:      map[string][]DocumentSymbol{},
 	}, nil
 }
 
@@ -80,47 +88,88 @@ func (m *Manager) ClearReferencesForURI(uri string) {
 }
 
 func (m *Manager) UpdateLocalIndex(workspaceRoot string) {
+	workspaceRoot = normalizeRootPath(workspaceRoot)
 	fileSymbols := map[string]map[string]Symbol{}
 	docSymbols := map[string][]DocumentSymbol{}
-	_ = filepath.WalkDir(workspaceRoot, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d == nil || d.IsDir() {
-			return nil
+	scanRoot(workspaceRoot, "workspace", func(uri string, symbols map[string]Symbol, docs []DocumentSymbol) {
+		if len(symbols) > 0 {
+			fileSymbols[uri] = annotateSymbols(symbols, "workspace", OriginLocal)
 		}
-		uri := fileURI(path)
-		symbols, docs := parsePath(path, uri)
-		if len(symbols) > 0 || len(docs) > 0 {
-			fileSymbols[uri] = symbols
+		if len(docs) > 0 {
 			docSymbols[uri] = docs
 		}
-		return nil
 	})
 	m.mu.Lock()
-	m.fileSymbols = fileSymbols
-	m.documentSymbols = docSymbols
+	m.workspaceRoot = workspaceRoot
+	m.workspaceFileSymbols = fileSymbols
+	mergeDocumentSymbols(m.documentSymbols, docSymbols)
 	m.rebuildLocalFuncsLocked()
+	m.rebuildExternalFuncsLocked()
+	m.mu.Unlock()
+}
+
+func (m *Manager) SetExtraRoots(roots []ScanRoot) {
+	paths := normalizeScanRoots(roots)
+	externalFileSymbols := map[string]map[string]Symbol{}
+	docSymbols := map[string][]DocumentSymbol{}
+	m.mu.RLock()
+	workspaceRoot := m.workspaceRoot
+	m.mu.RUnlock()
+	for _, root := range paths {
+		label := rootLabel(root)
+		scanRoot(root.Path, label, func(uri string, symbols map[string]Symbol, docs []DocumentSymbol) {
+			if isUnderRoot(pathFromURI(uri), workspaceRoot) {
+				return
+			}
+			if len(symbols) > 0 {
+				externalFileSymbols[uri] = annotateSymbols(symbols, label, OriginExternal)
+			}
+			if len(docs) > 0 {
+				docSymbols[uri] = docs
+			}
+		})
+	}
+	m.mu.Lock()
+	m.extraRoots = paths
+	m.externalFileSymbols = externalFileSymbols
+	mergeDocumentSymbols(m.documentSymbols, docSymbols)
+	m.rebuildExternalFuncsLocked()
 	m.mu.Unlock()
 }
 
 func (m *Manager) UpdateDocument(uri, content string) {
 	symbols, docs := parseURIContent(uri, content)
+	path := pathFromURI(uri)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	label, origin := m.classifyPathLocked(path)
 	if len(symbols) == 0 {
-		delete(m.fileSymbols, uri)
+		delete(m.workspaceFileSymbols, uri)
+		delete(m.externalFileSymbols, uri)
 		delete(m.documentSymbols, uri)
 	} else {
-		m.fileSymbols[uri] = symbols
+		annotated := annotateSymbols(symbols, label, origin)
+		if origin == OriginExternal {
+			m.externalFileSymbols[uri] = annotated
+			delete(m.workspaceFileSymbols, uri)
+		} else {
+			m.workspaceFileSymbols[uri] = annotated
+			delete(m.externalFileSymbols, uri)
+		}
 		m.documentSymbols[uri] = docs
 	}
 	m.rebuildLocalFuncsLocked()
+	m.rebuildExternalFuncsLocked()
 }
 
 func (m *Manager) RemoveDocument(uri string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.fileSymbols, uri)
+	delete(m.workspaceFileSymbols, uri)
+	delete(m.externalFileSymbols, uri)
 	delete(m.documentSymbols, uri)
 	m.rebuildLocalFuncsLocked()
+	m.rebuildExternalFuncsLocked()
 }
 
 func (m *Manager) GetCompletions() CompletionList {
@@ -185,10 +234,7 @@ func (m *Manager) BuildHover(funcName string) *Hover {
 	if doc := normalizedDoc(symbol.Doc); doc != "" {
 		sections = append(sections, doc)
 	}
-	return &Hover{Contents: MarkupContent{
-		Kind:  "markdown",
-		Value: strings.Join(sections, "\n\n"),
-	}}
+	return &Hover{Contents: MarkupContent{Kind: "markdown", Value: strings.Join(sections, "\n\n")}}
 }
 
 func detailFor(symbol Symbol) string {
@@ -274,26 +320,38 @@ func normalizedDoc(doc string) string {
 }
 
 func sourceLabel(symbol Symbol) string {
-	switch symbol.Origin {
-	case OriginLocal:
-		return "workspace"
-	case OriginExternal:
-		return "external"
-	case OriginCore:
-		return "bundled core"
-	default:
-		return ""
-	}
+	return symbol.SourceRoot
 }
 
 func (m *Manager) rebuildLocalFuncsLocked() {
 	local := make(map[string]Symbol)
-	for _, symbols := range m.fileSymbols {
+	for _, symbols := range m.workspaceFileSymbols {
 		for name, symbol := range symbols {
 			local[name] = symbol
 		}
 	}
 	m.LocalFuncs = local
+}
+
+func (m *Manager) rebuildExternalFuncsLocked() {
+	external := make(map[string]Symbol)
+	for _, root := range m.extraRoots {
+		uris := make([]string, 0)
+		for uri := range m.externalFileSymbols {
+			if isUnderRoot(pathFromURI(uri), root.Path) {
+				uris = append(uris, uri)
+			}
+		}
+		sort.Strings(uris)
+		for _, uri := range uris {
+			for name, symbol := range m.externalFileSymbols[uri] {
+				if _, exists := external[name]; !exists {
+					external[name] = symbol
+				}
+			}
+		}
+	}
+	m.ExternalFuncs = external
 }
 
 func (m *Manager) mergedLocked() map[string]Symbol {
@@ -308,6 +366,18 @@ func (m *Manager) mergedLocked() map[string]Symbol {
 		merged[k] = v
 	}
 	return merged
+}
+
+func (m *Manager) classifyPathLocked(path string) (string, SymbolOrigin) {
+	if isUnderRoot(path, m.workspaceRoot) {
+		return "workspace", OriginLocal
+	}
+	for _, root := range m.extraRoots {
+		if isUnderRoot(path, root.Path) {
+			return rootLabel(root), OriginExternal
+		}
+	}
+	return "workspace", OriginLocal
 }
 
 func parsePath(path, uri string) (map[string]Symbol, []DocumentSymbol) {
@@ -343,26 +413,14 @@ func fromTrio(parsed map[string]trio.ParsedFunction) (map[string]Symbol, []Docum
 			Params:     symbol.Params,
 			ReturnType: symbol.ReturnType,
 			ItemKind:   symbol.Kind,
-			Location: &Location{
-				URI: symbol.URI,
-				Range: Range{
-					Start: Position{Line: symbol.StartLine, Character: symbol.StartChar},
-					End:   Position{Line: symbol.EndLine, Character: symbol.EndChar},
-				},
-			},
+			Location: &Location{URI: symbol.URI, Range: Range{
+				Start: Position{Line: symbol.StartLine, Character: symbol.StartChar},
+				End:   Position{Line: symbol.EndLine, Character: symbol.EndChar},
+			}},
 			Origin: OriginLocal,
 		}
-		rangeValue := Range{
-			Start: Position{Line: symbol.StartLine, Character: symbol.StartChar},
-			End:   Position{Line: symbol.EndLine, Character: symbol.EndChar},
-		}
-		docSymbols = append(docSymbols, DocumentSymbol{
-			Name:           symbol.Name,
-			Detail:         symbol.ArgsStr,
-			Kind:           symbolKindFunction,
-			Range:          rangeValue,
-			SelectionRange: rangeValue,
-		})
+		rangeValue := Range{Start: Position{Line: symbol.StartLine, Character: symbol.StartChar}, End: Position{Line: symbol.EndLine, Character: symbol.EndChar}}
+		docSymbols = append(docSymbols, DocumentSymbol{Name: symbol.Name, Detail: symbol.ArgsStr, Kind: symbolKindFunction, Range: rangeValue, SelectionRange: rangeValue})
 	}
 	sortDocumentSymbols(docSymbols)
 	return result, docSymbols
@@ -379,26 +437,14 @@ func fromFantom(parsed map[string]fantom.ParsedFunction) (map[string]Symbol, []D
 			ArgsStr:  symbol.ArgsStr,
 			Params:   symbol.Params,
 			ItemKind: symbol.Kind,
-			Location: &Location{
-				URI: symbol.URI,
-				Range: Range{
-					Start: Position{Line: symbol.StartLine, Character: symbol.StartChar},
-					End:   Position{Line: symbol.EndLine, Character: symbol.EndChar},
-				},
-			},
+			Location: &Location{URI: symbol.URI, Range: Range{
+				Start: Position{Line: symbol.StartLine, Character: symbol.StartChar},
+				End:   Position{Line: symbol.EndLine, Character: symbol.EndChar},
+			}},
 			Origin: OriginLocal,
 		}
-		rangeValue := Range{
-			Start: Position{Line: symbol.StartLine, Character: symbol.StartChar},
-			End:   Position{Line: symbol.EndLine, Character: symbol.EndChar},
-		}
-		docSymbols = append(docSymbols, DocumentSymbol{
-			Name:           symbol.Name,
-			Detail:         symbol.ArgsStr,
-			Kind:           symbolKindFunction,
-			Range:          rangeValue,
-			SelectionRange: rangeValue,
-		})
+		rangeValue := Range{Start: Position{Line: symbol.StartLine, Character: symbol.StartChar}, End: Position{Line: symbol.EndLine, Character: symbol.EndChar}}
+		docSymbols = append(docSymbols, DocumentSymbol{Name: symbol.Name, Detail: symbol.ArgsStr, Kind: symbolKindFunction, Range: rangeValue, SelectionRange: rangeValue})
 	}
 	sortDocumentSymbols(docSymbols)
 	return result, docSymbols
@@ -421,12 +467,7 @@ func workspaceSymbolFor(symbol Symbol, query string) (WorkspaceSymbol, bool) {
 	if query != "" && !strings.Contains(nameLower, query) {
 		return WorkspaceSymbol{}, false
 	}
-	return WorkspaceSymbol{
-		Name:     symbol.Name,
-		Kind:     symbolKindFunction,
-		Location: *symbol.Location,
-		Detail:   detailFor(symbol),
-	}, true
+	return WorkspaceSymbol{Name: symbol.Name, Kind: symbolKindFunction, Location: *symbol.Location, Detail: detailFor(symbol)}, true
 }
 
 func sortWorkspaceSymbols(symbols []WorkspaceSymbol, query string) {
@@ -441,6 +482,115 @@ func sortWorkspaceSymbols(symbols []WorkspaceSymbol, query string) {
 		}
 		return in < jn
 	})
+}
+
+func annotateSymbols(symbols map[string]Symbol, sourceRoot string, origin SymbolOrigin) map[string]Symbol {
+	annotated := make(map[string]Symbol, len(symbols))
+	for name, symbol := range symbols {
+		symbol.SourceRoot = sourceRoot
+		symbol.Origin = origin
+		annotated[name] = symbol
+	}
+	return annotated
+}
+
+func mergeDocumentSymbols(existing map[string][]DocumentSymbol, updates map[string][]DocumentSymbol) {
+	for uri, docs := range updates {
+		existing[uri] = docs
+	}
+}
+
+func scanRoot(root string, label string, onFile func(uri string, symbols map[string]Symbol, docs []DocumentSymbol)) {
+	if root == "" {
+		return
+	}
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d == nil {
+			return nil
+		}
+		if d.IsDir() {
+			if relativeDepth(root, path) > maxScanDepth {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !isSupportedSourcePath(path) {
+			return nil
+		}
+		uri := fileURI(path)
+		symbols, docs := parsePath(path, uri)
+		onFile(uri, symbols, docs)
+		return nil
+	})
+}
+
+func normalizeScanRoots(roots []ScanRoot) []ScanRoot {
+	seen := map[string]struct{}{}
+	normalized := make([]ScanRoot, 0, len(roots))
+	for _, root := range roots {
+		path := normalizeRootPath(root.Path)
+		if path == "" {
+			continue
+		}
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		if _, exists := seen[path]; exists {
+			continue
+		}
+		seen[path] = struct{}{}
+		root.Path = path
+		normalized = append(normalized, root)
+	}
+	return normalized
+}
+
+func relativeDepth(root string, current string) int {
+	rel, err := filepath.Rel(root, current)
+	if err != nil || rel == "." {
+		return 0
+	}
+	return strings.Count(filepath.ToSlash(rel), "/") + 1
+}
+
+func isSupportedSourcePath(path string) bool {
+	return strings.HasSuffix(path, ".fan") || strings.HasSuffix(path, ".trio") || strings.HasSuffix(path, ".axon")
+}
+
+func rootLabel(root ScanRoot) string {
+	name := "externalPaths"
+	if root.Kind == ScanRootHaxall {
+		name = "haxallPaths"
+	}
+	return name + ":" + root.Path
+}
+
+func normalizeRootPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return filepath.Clean(path)
+	}
+	return filepath.Clean(abs)
+}
+
+func isUnderRoot(path string, root string) bool {
+	if path == "" || root == "" {
+		return false
+	}
+	path = filepath.Clean(path)
+	root = filepath.Clean(root)
+	if path == root {
+		return true
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (!strings.HasPrefix(rel, "..") && rel != "")
 }
 
 func fileURI(path string) string {

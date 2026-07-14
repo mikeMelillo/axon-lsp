@@ -66,11 +66,16 @@ function activate(context) {
     const clientOptions = {
         // Must match the language ID in package.json
         documentSelector: [
-            { scheme: 'file', language: 'axon' }
+            { scheme: 'file', language: 'axon' },
+            { scheme: 'file', language: 'fantom' },
+            { scheme: 'file', pattern: '**/*.fan' }
         ],
+        initializationOptions: {
+            settings: getServerSettings()
+        },
         synchronize: {
             // Notify the server about file changes in the workspace
-            fileEvents: vscode_1.workspace.createFileSystemWatcher('**/{*.axon,*.trio}')
+            fileEvents: vscode_1.workspace.createFileSystemWatcher('**/{*.axon,*.trio,*.fan}')
         },
         outputChannel: outputChannel,
         traceOutputChannel: vscode_1.window.createOutputChannel('Axon LSP Trace'),
@@ -93,11 +98,38 @@ function activate(context) {
     client.start().catch(err => {
         outputChannel.appendLine(`Failed to start client: ${err}`);
     });
+    context.subscriptions.push(vscode_1.workspace.onDidChangeConfiguration(event => {
+        if (!event.affectsConfiguration('axonLsp')) {
+            return;
+        }
+        void client.sendNotification('workspace/didChangeConfiguration', {
+            settings: getServerSettings()
+        });
+    }));
     // 6. Register command to open external URLs in browser
     context.subscriptions.push(vscode_1.commands.registerCommand('extension.openExternal', (url) => {
         console.log('OpenExternal called with:', url);
         vscode_1.env.openExternal(vscode_1.Uri.parse(url));
     }));
+}
+function getServerSettings() {
+    const config = vscode_1.workspace.getConfiguration('axonLsp');
+    const workspaceRoot = vscode_1.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    return {
+        haxallPaths: normalizeConfiguredPaths(config.get('haxallPaths', []), workspaceRoot),
+        externalPaths: normalizeConfiguredPaths(config.get('externalPaths', []), workspaceRoot)
+    };
+}
+function normalizeConfiguredPaths(paths, workspaceRoot) {
+    return paths
+        .map(value => value.trim())
+        .filter(Boolean)
+        .map(value => {
+        if (path.isAbsolute(value) || !workspaceRoot) {
+            return value;
+        }
+        return path.resolve(workspaceRoot, value);
+    });
 }
 function resolveServerBinary(context) {
     const override = process.env.AXON_LSP_SERVER_PATH;

@@ -1,9 +1,17 @@
+name:yield
+func
+doc:
+    Internal func to yield history data for a hisFunc in computed histories
+
+---
 name:diags
+func
 doc:
     Returns diagnostics feed for OS telemetry
 
 ---
 name:Span
+func
 doc:
     Utility function for calling Span in views
 ---

@@ -14,7 +14,6 @@ src:
         var: {input: "Str", defVal:Span(thisMonth)} //lspignore
     }
         hisRead(point, dates)
-        
         myTestFantomFunction(abcd,efg)
         data: [
             {item: 123, funcName: "dontReadMePlease()"},
@@ -43,6 +42,14 @@ src:
         spark_damperOpen({target, date, damp})
         
         map(val, his)
+    end
+---
+name: somestuff
+func
+doc: "Another helper"
+src:
+    (rec, opts) => do
+        hello
     end
 ---
 name: anotherFunction
