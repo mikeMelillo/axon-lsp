@@ -21,8 +21,48 @@ type responseError struct {
 }
 
 type initializeParams struct {
-	RootURI  string `json:"rootUri"`
-	RootPath string `json:"rootPath"`
+	RootURI               string                 `json:"rootUri"`
+	RootPath              string                 `json:"rootPath"`
+	WorkspaceFolders      []workspaceFolder      `json:"workspaceFolders,omitempty"`
+	InitializationOptions *initializationOptions `json:"initializationOptions,omitempty"`
+}
+
+type workspaceFolder struct {
+	URI  string `json:"uri"`
+	Name string `json:"name"`
+}
+
+type initializationOptions struct {
+	Settings settingsPayload `json:"settings"`
+}
+
+type settingsPayload struct {
+	HaxallPaths              []string `json:"haxallPaths"`
+	ExternalPaths            []string `json:"externalPaths"`
+	IndexAllWorkspaceFolders bool     `json:"indexAllWorkspaceFolders"`
+	Mode                     string   `json:"mode"`
+}
+
+type didChangeWorkspaceFoldersParams struct {
+	Event workspaceFoldersChangeEvent `json:"event"`
+}
+
+type workspaceFoldersChangeEvent struct {
+	Added   []workspaceFolder `json:"added"`
+	Removed []workspaceFolder `json:"removed"`
+}
+
+type didChangeWatchedFilesParams struct {
+	Changes []fileEvent `json:"changes"`
+}
+
+type fileEvent struct {
+	URI  string `json:"uri"`
+	Type int    `json:"type"`
+}
+
+type embeddedDocumentParams struct {
+	URI string `json:"uri"`
 }
 
 type textDocumentIdentifier struct {
@@ -65,6 +105,37 @@ type definitionParams = textDocumentPositionParams
 type hoverParams = textDocumentPositionParams
 type signatureHelpParams = textDocumentPositionParams
 type referenceParams = textDocumentPositionParams
+type documentHighlightParams = textDocumentPositionParams
+type documentSymbolParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+}
+
+type foldingRangeParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+}
+
+type rangeParams struct {
+	Start index.Position `json:"start"`
+	End   index.Position `json:"end"`
+}
+
+type workspaceSymbolParams struct {
+	Query string `json:"query"`
+}
+
+type codeActionParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Range        rangeParams            `json:"range"`
+	Context      codeActionContext      `json:"context"`
+}
+
+type codeActionContext struct {
+	Diagnostics []index.Diagnostic `json:"diagnostics"`
+}
+
+type didChangeConfigurationParams struct {
+	Settings settingsPayload `json:"settings"`
+}
 
 type publishDiagnosticsParams struct {
 	URI         string             `json:"uri"`
@@ -82,13 +153,27 @@ type serverInfo struct {
 }
 
 type serverCapabilities struct {
-	TextDocumentSync       textDocumentSyncOptions `json:"textDocumentSync"`
-	DefinitionProvider     bool                    `json:"definitionProvider"`
-	HoverProvider          bool                    `json:"hoverProvider"`
-	ReferencesProvider     bool                    `json:"referencesProvider"`
-	CompletionProvider     completionOptions       `json:"completionProvider"`
-	SignatureHelpProvider  signatureHelpOptions    `json:"signatureHelpProvider"`
-	DocumentSymbolProvider bool                    `json:"documentSymbolProvider,omitempty"`
+	TextDocumentSync          textDocumentSyncOptions `json:"textDocumentSync"`
+	DefinitionProvider        bool                    `json:"definitionProvider"`
+	HoverProvider             bool                    `json:"hoverProvider"`
+	ReferencesProvider        bool                    `json:"referencesProvider"`
+	CompletionProvider        completionOptions       `json:"completionProvider"`
+	SignatureHelpProvider     signatureHelpOptions    `json:"signatureHelpProvider"`
+	DocumentSymbolProvider    bool                    `json:"documentSymbolProvider,omitempty"`
+	WorkspaceSymbolProvider   bool                    `json:"workspaceSymbolProvider,omitempty"`
+	CodeActionProvider        bool                    `json:"codeActionProvider,omitempty"`
+	DocumentHighlightProvider bool                    `json:"documentHighlightProvider,omitempty"`
+	FoldingRangeProvider      bool                    `json:"foldingRangeProvider,omitempty"`
+	Workspace                 workspaceCapabilities   `json:"workspace,omitempty"`
+}
+
+type workspaceCapabilities struct {
+	WorkspaceFolders workspaceFolderCapabilities `json:"workspaceFolders"`
+}
+
+type workspaceFolderCapabilities struct {
+	Supported           bool `json:"supported"`
+	ChangeNotifications bool `json:"changeNotifications"`
 }
 
 type textDocumentSyncOptions struct {
@@ -110,4 +195,29 @@ type completionOptions struct {
 
 type signatureHelpOptions struct {
 	TriggerCharacters []string `json:"triggerCharacters"`
+}
+
+type documentHighlight struct {
+	Range index.Range `json:"range"`
+	Kind  int         `json:"kind,omitempty"`
+}
+
+type foldingRange struct {
+	StartLine int `json:"startLine"`
+	EndLine   int `json:"endLine"`
+}
+
+type textEdit struct {
+	Range   rangeParams `json:"range"`
+	NewText string      `json:"newText"`
+}
+
+type workspaceEdit struct {
+	Changes map[string][]textEdit `json:"changes,omitempty"`
+}
+
+type codeAction struct {
+	Title string        `json:"title"`
+	Kind  string        `json:"kind,omitempty"`
+	Edit  workspaceEdit `json:"edit,omitempty"`
 }

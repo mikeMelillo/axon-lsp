@@ -3,6 +3,8 @@ node_modules/
 .venv/
 __pycache__/
 build/
-cache_sources/haxall
+cache_sources/haxall-3.1.12/*
+cache_sources/haxall-4.0.5/*
 
 bin/
+cache_sources/haxall*/

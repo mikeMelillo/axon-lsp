@@ -14,10 +14,21 @@ var keywords = map[string]struct{}{
 }
 
 func Validate(uri string, source string, manager *index.Manager) []index.Diagnostic {
-	manager.ClearReferencesForURI(uri)
+	return validate(uri, source, manager, true)
+}
+
+func ValidateRegion(uri string, source string, manager *index.Manager, clearReferences bool) []index.Diagnostic {
+	return validate(uri, source, manager, clearReferences)
+}
+
+func validate(uri string, source string, manager *index.Manager, clearReferences bool) []index.Diagnostic {
+	if clearReferences {
+		manager.ClearReferencesForURI(uri)
+	}
 	diagnostics := []index.Diagnostic{}
-	localFuncs, paramScopes := parser.ParseLocalFunctions(source)
-	lines := strings.Split(source, "\n")
+	masked := lexer.MaskComments(source)
+	localFuncs, paramScopes := parser.ParseLocalFunctions(masked.Text)
+	lines := strings.Split(masked.Text, "\n")
 	inIgnoredField := false
 
 	for i, line := range lines {
@@ -29,7 +40,7 @@ func Validate(uri string, source string, manager *index.Manager) []index.Diagnos
 		} else if inIgnoredField && stripped != "" && indent < 2 {
 			inIgnoredField = false
 		}
-		if inIgnoredField || strings.Contains(line, "//lspignore") {
+		if inIgnoredField || masked.LineCommentContains(i, "//lspignore") {
 			continue
 		}
 

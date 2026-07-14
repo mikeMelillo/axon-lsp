@@ -18,7 +18,7 @@ func IgnoredRecordFields() []string {
 func ParseLocalFunctions(source string) (map[string]struct{}, map[int]map[string]struct{}) {
 	localFuncs := map[string]struct{}{}
 	paramScopes := map[int]map[string]struct{}{}
-	lines := strings.Split(source, "\n")
+	lines := strings.Split(lexer.MaskComments(source).Text, "\n")
 
 	currentParams := map[string]struct{}{}
 	scopeStart := -1
@@ -39,7 +39,7 @@ func ParseLocalFunctions(source string) (map[string]struct{}, map[int]map[string
 			continue
 		}
 
-		noComment := strings.TrimSpace(lexer.StripComment(stripped))
+		noComment := strings.TrimSpace(stripped)
 		if scopeStart >= 0 && noComment != "" && indent < funcIndent {
 			for j := scopeStart; j < i; j++ {
 				paramScopes[j] = cloneSet(currentParams)

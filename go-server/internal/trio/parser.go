@@ -7,20 +7,33 @@ import (
 	"strings"
 
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/ast"
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/lexer"
 )
 
 type ParsedFunction struct {
-	Name       string
-	Doc        string
-	ArgsStr    string
-	Params     []string
-	ReturnType string
-	Kind       int
-	URI        string
-	StartLine  int
-	StartChar  int
-	EndLine    int
-	EndChar    int
+	Name         string
+	Doc          string
+	ArgsStr      string
+	Params       []string
+	ReturnType   string
+	Kind         int
+	URI          string
+	StartLine    int
+	StartChar    int
+	EndLine      int
+	EndChar      int
+	ScopeEndLine int
+	ScopeEndChar int
+}
+
+type AxonRegion struct {
+	Text      string
+	StartLine int
+}
+
+type recordChunk struct {
+	content   string
+	startLine int
 }
 
 var (
@@ -33,17 +46,19 @@ func ParseFile(path string) map[string]ParsedFunction {
 	if err != nil {
 		return map[string]ParsedFunction{}
 	}
-	return ParseContent(path, string(content))
+	return ParseURIContent(fileURI(path), string(content))
 }
 
 func ParseContent(path, content string) map[string]ParsedFunction {
-	uri := fileURI(path)
-	records := splitRecords(content)
+	return ParseURIContent(fileURI(path), content)
+}
+
+func ParseURIContent(uri, content string) map[string]ParsedFunction {
+	records := splitRecords(lexer.MaskComments(content).Text)
 	found := make(map[string]ParsedFunction)
-	currentLine := 0
 
 	for _, record := range records {
-		lines := strings.Split(record, "\n")
+		lines := strings.Split(record.content, "\n")
 		tags := map[string]string{}
 		nameLineOffset := 0
 		nameCharOffset := 0
@@ -72,7 +87,6 @@ func ParseContent(path, content string) map[string]ParsedFunction {
 		}
 
 		if tags["func"] == "" || tags["name"] == "" {
-			currentLine += len(lines)
 			continue
 		}
 
@@ -93,48 +107,95 @@ func ParseContent(path, content string) map[string]ParsedFunction {
 			Parameters:     params,
 			Signature:      argsStr,
 			ReturnType:     returnType,
-			StartLine:      currentLine + nameLineOffset,
+			StartLine:      record.startLine + nameLineOffset,
 			StartCharacter: max(nameCharOffset, 0),
-			EndLine:        currentLine + nameLineOffset,
+			EndLine:        record.startLine + nameLineOffset,
 			EndCharacter:   max(nameCharOffset, 0) + len(name),
 		}
+		scopeEndLineOffset, scopeEndChar := lastContentPosition(lines)
 		found[name] = ParsedFunction{
-			Name:       name,
-			Doc:        doc,
-			ArgsStr:    argsStr,
-			Params:     params,
-			ReturnType: returnType,
-			Kind:       3,
-			URI:        uri,
-			StartLine:  decl.StartLine,
-			StartChar:  decl.StartCharacter,
-			EndLine:    decl.EndLine,
-			EndChar:    decl.EndCharacter,
+			Name:         name,
+			Doc:          doc,
+			ArgsStr:      argsStr,
+			Params:       params,
+			ReturnType:   returnType,
+			Kind:         3,
+			URI:          uri,
+			StartLine:    decl.StartLine,
+			StartChar:    decl.StartCharacter,
+			EndLine:      decl.EndLine,
+			EndChar:      decl.EndCharacter,
+			ScopeEndLine: record.startLine + scopeEndLineOffset,
+			ScopeEndChar: scopeEndChar,
 		}
-		currentLine += len(lines)
 	}
 
 	return found
 }
 
-func splitRecords(content string) []string {
-	lines := strings.Split(content, "\n")
-	parts := make([]string, 0, 4)
-	current := make([]string, 0, len(lines))
+func ExtractAxonRegions(content string) []AxonRegion {
+	maskedLines := strings.Split(lexer.MaskComments(content).Text, "\n")
+	originalLines := strings.Split(content, "\n")
+	regions := []AxonRegion{}
+	start := -1
+	regionLines := []string{}
 	flush := func() {
-		parts = append(parts, strings.Join(current, "\n"))
+		if start >= 0 {
+			regions = append(regions, AxonRegion{Text: strings.Join(regionLines, "\n"), StartLine: start})
+		}
+		start = -1
+		regionLines = nil
+	}
+	for i, line := range maskedLines {
+		trimmed := strings.TrimSpace(line)
+		if start >= 0 && trimmed != "" && len(line) == len(strings.TrimLeft(line, " \t")) {
+			flush()
+		}
+		if start < 0 {
+			if match := tagPattern.FindStringSubmatch(line); match != nil && strings.TrimSpace(match[1]) == "src" {
+				start = i
+				regionLines = append(regionLines, originalLines[i])
+			}
+			continue
+		}
+		regionLines = append(regionLines, originalLines[i])
+	}
+	flush()
+	return regions
+}
+
+func splitRecords(content string) []recordChunk {
+	lines := strings.Split(content, "\n")
+	parts := make([]recordChunk, 0, 4)
+	current := make([]string, 0, len(lines))
+	currentStartLine := 0
+	flush := func() {
+		parts = append(parts, recordChunk{content: strings.Join(current, "\n"), startLine: currentStartLine})
 		current = current[:0]
 	}
-	for _, line := range lines {
+	for idx, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed != "" && strings.Trim(trimmed, "-") == "" && len(trimmed) >= 3 {
 			flush()
+			currentStartLine = idx + 1
 			continue
+		}
+		if len(current) == 0 {
+			currentStartLine = idx
 		}
 		current = append(current, line)
 	}
 	flush()
 	return parts
+}
+
+func lastContentPosition(lines []string) (int, int) {
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			return i, len(lines[i])
+		}
+	}
+	return 0, 0
 }
 
 func parseSignature(src string) ([]string, string, string) {

@@ -30,16 +30,59 @@ type Location struct {
 }
 
 type Symbol struct {
-	Name       string
-	Qualified  string
-	Kind       SymbolKind
-	Doc        string
-	ArgsStr    string
-	Params     []string
-	ReturnType string
-	ItemKind   int
-	Location   *Location
-	Origin     SymbolOrigin
+	Name          string
+	Qualified     string
+	Kind          SymbolKind
+	Doc           string
+	ArgsStr       string
+	Params        []string
+	ReturnType    string
+	ItemKind      int
+	Location      *Location
+	Origin        SymbolOrigin
+	SourceRoot    string
+	SourceKind    string
+	SourceModel   string
+	SourceVersion string
+	SourceID      string
+}
+
+type Mode string
+
+const (
+	ModeAuto  Mode = "auto"
+	ModeDefs  Mode = "defs"
+	ModeSpecs Mode = "specs"
+)
+
+type ScanRootKind string
+
+const (
+	ScanRootWorkspace ScanRootKind = "workspace"
+	ScanRootHaxall    ScanRootKind = "haxall"
+	ScanRootExternal  ScanRootKind = "external"
+)
+
+type ScanRoot struct {
+	Path  string
+	Kind  ScanRootKind
+	Label string
+}
+
+type DocumentSymbol struct {
+	Name           string      `json:"name"`
+	Detail         string      `json:"detail,omitempty"`
+	Kind           int         `json:"kind"`
+	Range          Range       `json:"range"`
+	SelectionRange Range       `json:"selectionRange"`
+	Children       interface{} `json:"children,omitempty"`
+}
+
+type WorkspaceSymbol struct {
+	Name     string   `json:"name"`
+	Kind     int      `json:"kind"`
+	Location Location `json:"location"`
+	Detail   string   `json:"detail,omitempty"`
 }
 
 type CompletionItem struct {

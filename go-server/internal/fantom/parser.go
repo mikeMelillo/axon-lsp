@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/lexer"
 )
 
 type ParsedFunction struct {
@@ -27,8 +29,13 @@ func ParseFile(path string) map[string]ParsedFunction {
 	if err != nil {
 		return map[string]ParsedFunction{}
 	}
-	lines := strings.Split(string(content), "\n")
-	uri := fileURI(path)
+	return ParseURIContent(fileURI(path), string(content))
+}
+
+func ParseURIContent(uri, content string) map[string]ParsedFunction {
+	masked := lexer.MaskComments(content)
+	lines := strings.Split(masked.Text, "\n")
+	originalLines := strings.Split(content, "\n")
 	found := make(map[string]ParsedFunction)
 
 	for i, line := range lines {
@@ -40,12 +47,12 @@ func ParseFile(path string) map[string]ParsedFunction {
 			searchEnd = len(lines)
 		}
 		searchArea := strings.Join(lines[i:searchEnd], "\n")
-		match := functionPattern.FindStringSubmatch(searchArea)
+		match := functionPattern.FindStringSubmatchIndex(searchArea)
 		if match == nil {
 			continue
 		}
-		name := match[1]
-		rawArgs := strings.TrimSpace(match[2])
+		name := searchArea[match[2]:match[3]]
+		rawArgs := strings.TrimSpace(searchArea[match[4]:match[5]])
 		params := []string{}
 		if rawArgs != "" {
 			for _, arg := range strings.Split(rawArgs, ",") {
@@ -57,7 +64,7 @@ func ParseFile(path string) map[string]ParsedFunction {
 		}
 		docLines := []string{}
 		for j := i - 1; j >= 0; j-- {
-			prev := strings.TrimSpace(lines[j])
+			prev := strings.TrimSpace(originalLines[j])
 			switch {
 			case strings.HasPrefix(prev, "**"):
 				docLines = append([]string{strings.TrimSpace(strings.TrimPrefix(prev, "**"))}, docLines...)
@@ -71,10 +78,8 @@ func ParseFile(path string) map[string]ParsedFunction {
 		if len(docLines) > 0 {
 			doc = strings.Join(docLines, "\n")
 		}
-		char := strings.Index(line, "@Axon")
-		if char < 0 {
-			char = 0
-		}
+		startLineOffset, startChar := offsetToLineChar(searchArea, match[2])
+		endLineOffset, endChar := offsetToLineChar(searchArea, match[3])
 		found[name] = ParsedFunction{
 			Name:      name,
 			Doc:       doc,
@@ -82,13 +87,31 @@ func ParseFile(path string) map[string]ParsedFunction {
 			Params:    params,
 			Kind:      3,
 			URI:       uri,
-			StartLine: i,
-			StartChar: char,
-			EndLine:   i,
-			EndChar:   char + 5 + len(name),
+			StartLine: i + startLineOffset,
+			StartChar: startChar,
+			EndLine:   i + endLineOffset,
+			EndChar:   endChar,
 		}
 	}
 	return found
+}
+
+func offsetToLineChar(content string, offset int) (int, int) {
+	if offset < 0 {
+		return 0, 0
+	}
+	line := 0
+	lastNewline := -1
+	for idx, ch := range content {
+		if idx >= offset {
+			break
+		}
+		if ch == '\n' {
+			line++
+			lastNewline = idx
+		}
+	}
+	return line, offset - lastNewline - 1
 }
 
 func fileURI(path string) string {

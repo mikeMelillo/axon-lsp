@@ -26,6 +26,8 @@ export function activate(context: ExtensionContext) {
         return;
     }
     outputChannel.appendLine(`Using server binary: ${serverBinary}`);
+    let settings = getServerSettings();
+    logWorkspaceIndexWarning(outputChannel, settings.indexAllWorkspaceFolders);
 
     // 3. Server options: how to launch the Go process
     const serverOptions: ServerOptions = {
@@ -39,11 +41,18 @@ export function activate(context: ExtensionContext) {
     const clientOptions: LanguageClientOptions = {
         // Must match the language ID in package.json
         documentSelector: [
-            { scheme: 'file', language: 'axon' }
+            { scheme: 'file', language: 'axon' },
+            { scheme: 'file', language: 'xeto' },
+            { scheme: 'file', language: 'fantom' },
+            { scheme: 'file', pattern: '**/*.fan' },
+            { scheme: 'file', pattern: '**/*.xeto' }
         ],
+        initializationOptions: {
+            settings
+        },
         synchronize: {
             // Notify the server about file changes in the workspace
-            fileEvents: workspace.createFileSystemWatcher('**/{*.axon,*.trio}')
+            fileEvents: workspace.createFileSystemWatcher('**/{*.axon,*.trio,*.fan,*.xeto}')
         },
         outputChannel: outputChannel,
         traceOutputChannel: window.createOutputChannel('Axon LSP Trace'),
@@ -68,11 +77,35 @@ export function activate(context: ExtensionContext) {
         serverOptions,
         clientOptions
     );
-
     outputChannel.appendLine('Starting Language Client...');
-    client.start().catch(err => {
+    const clientReady = client.start();
+    context.subscriptions.push(workspace.registerTextDocumentContentProvider('axon-ext', {
+        provideTextDocumentContent: async uri => {
+            await clientReady;
+            return client.sendRequest<string>('axonLsp/embeddedDocument', { uri: uri.toString() });
+        }
+    }));
+
+    clientReady.catch(err => {
         outputChannel.appendLine(`Failed to start client: ${err}`);
     });
+
+    context.subscriptions.push(workspace.onDidChangeConfiguration(event => {
+        if (!event.affectsConfiguration('axonLsp')) {
+            return;
+        }
+        const previousSettings = settings;
+        settings = getServerSettings();
+        if (!previousSettings.indexAllWorkspaceFolders && settings.indexAllWorkspaceFolders) {
+            logWorkspaceIndexWarning(outputChannel, true);
+        }
+        void client.sendNotification('workspace/didChangeConfiguration', {
+            settings
+        });
+    }));
+    context.subscriptions.push(workspace.onDidChangeWorkspaceFolders(() => {
+        logWorkspaceIndexWarning(outputChannel, settings.indexAllWorkspaceFolders);
+    }));
 
     // 6. Register command to open external URLs in browser
     context.subscriptions.push(
@@ -81,6 +114,45 @@ export function activate(context: ExtensionContext) {
             env.openExternal(Uri.parse(url));
         })
     );
+}
+
+interface ServerSettings {
+    haxallPaths: string[];
+    externalPaths: string[];
+    indexAllWorkspaceFolders: boolean;
+    mode: string;
+}
+
+function getServerSettings(): ServerSettings {
+    const config = workspace.getConfiguration('axonLsp');
+    const workspaceRoot = workspace.workspaceFolders?.[0]?.uri.fsPath;
+    return {
+        haxallPaths: normalizeConfiguredPaths(config.get<string[]>('haxallPaths', []), workspaceRoot),
+        externalPaths: normalizeConfiguredPaths(config.get<string[]>('externalPaths', []), workspaceRoot),
+        indexAllWorkspaceFolders: config.get<boolean>('indexAllWorkspaceFolders', false),
+        mode: config.get<string>('mode', 'auto')
+    };
+}
+
+function logWorkspaceIndexWarning(outputChannel: { appendLine(value: string): void }, enabled: boolean): void {
+    const count = workspace.workspaceFolders?.length ?? 0;
+    if (enabled && count > 1) {
+        outputChannel.appendLine(
+            `Warning: indexing all ${count} workspace folders as local Axon sources; this may increase startup time and memory usage.`
+        );
+    }
+}
+
+function normalizeConfiguredPaths(paths: string[], workspaceRoot?: string): string[] {
+    return paths
+        .map(value => value.trim())
+        .filter(Boolean)
+        .map(value => {
+            if (path.isAbsolute(value) || !workspaceRoot) {
+                return value;
+            }
+            return path.resolve(workspaceRoot, value);
+        });
 }
 
 function resolveServerBinary(context: ExtensionContext): string {

@@ -14,6 +14,8 @@ This project is still very much a practical tool built in the open. The near-ter
 - **Signature Help**: See function arguments while typing
 - **References**: Find function usages in the workspace
 - **Diagnostics**: Real-time error detection for undefined functions
+- **Block Navigation**: Highlight and fold matching `do`/`end`, `defcomp`/`end`, `if`/`else`, and `try`/`catch` pairs
+- **Document Structure**: Function ranges support Outline, Breadcrumbs, and VS Code Sticky Scroll
 
 ## Installation
 
@@ -58,6 +60,15 @@ Available settings:
 
 - `axonLsp.haxallPaths`: paths to Haxall installations or source trees
 - `axonLsp.externalPaths`: additional directories to scan for Axon functions
+- `axonLsp.indexAllWorkspaceFolders`: index every folder in a multi-root VS Code workspace as local Axon sources
+
+Notes:
+
+- Configured Haxall and external paths are indexed recursively up to 4 directory levels below each root.
+- `axonLsp.haxallPaths` can point at a Haxall-style clone root; the server will walk down into likely source folders as long as they fall within that depth budget.
+- Multi-root indexing is disabled by default, so only the first VS Code workspace folder is scanned. Enabling it may increase startup time and memory usage for large workspaces.
+- If the same function exists in multiple places, the extension prefers workspace definitions first, then configured extra roots, then the bundled core cache.
+- Enable VS Code's `editor.stickyScroll.enabled` setting to keep the current function declaration visible while scrolling through long bodies.
 
 ## How It Works
 
