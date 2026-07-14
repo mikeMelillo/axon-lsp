@@ -47,8 +47,6 @@ func main() {
 	}
 	coreSource := filepath.Join(repoRoot, "cache_sources", "coreFuncs.trio")
 	haxallPath := filepath.Join(repoRoot, "cache_sources", "haxall")
-	outJSON := filepath.Join(repoRoot, "server", "axon_lsp", "function_cache.json")
-	outCore := filepath.Join(repoRoot, "server", "axon_lsp", "coreFuncs.trio")
 	assetJSON := filepath.Join(repoRoot, "go-server", "internal", "cache", "assets", "function_cache.json")
 	assetCore := filepath.Join(repoRoot, "go-server", "internal", "cache", "assets", "coreFuncs.trio")
 
@@ -87,19 +85,15 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	for _, path := range []string{outJSON, assetJSON} {
-		if err := os.WriteFile(path, data, 0o644); err != nil {
-			panic(err)
-		}
+	if err := os.WriteFile(assetJSON, data, 0o644); err != nil {
+		panic(err)
 	}
 	coreData, err := os.ReadFile(coreSource)
 	if err != nil {
 		panic(err)
 	}
-	for _, path := range []string{outCore, assetCore} {
-		if err := os.WriteFile(path, coreData, 0o644); err != nil {
-			panic(err)
-		}
+	if err := os.WriteFile(assetCore, coreData, 0o644); err != nil {
+		panic(err)
 	}
 	fmt.Printf("Wrote %d functions\n", len(list))
 }

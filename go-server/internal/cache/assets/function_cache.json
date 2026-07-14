@@ -22,6 +22,26 @@
     }
   },
   {
+    "name": "Span",
+    "doc": "\n  Utility function for calling Span in views",
+    "args_str": "()",
+    "params": [],
+    "kind": 3,
+    "location": {
+      "uri": "axon-ext://coreFuncs.trio",
+      "range": {
+        "start": {
+          "line": 12,
+          "character": 5
+        },
+        "end": {
+          "line": 12,
+          "character": 9
+        }
+      }
+    }
+  },
+  {
     "name": "_as",
     "doc": "Set the unit of a number.  Unlike `to()` function, no conversion of\nthe scalar of the number is performed.  The target unit can be a\nunit string or a number in which case the scalar value of the\nunit parameter is ignored (by convention should be 1).\n\nExamples:\n75°F.as(1°C)\n75°F.as(\"°C\")",
     "args_str": "(val, unit)",
@@ -253,11 +273,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9620,
+          "line": 9623,
           "character": 5
         },
         "end": {
-          "line": 9620,
+          "line": 9623,
           "character": 20
         }
       }
@@ -528,11 +548,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2484,
+          "line": 2487,
           "character": 5
         },
         "end": {
-          "line": 2484,
+          "line": 2487,
           "character": 14
         }
       }
@@ -548,11 +568,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4007,
+          "line": 4010,
           "character": 5
         },
         "end": {
-          "line": 4007,
+          "line": 4010,
           "character": 12
         }
       }
@@ -568,11 +588,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7774,
+          "line": 7777,
           "character": 5
         },
         "end": {
-          "line": 7774,
+          "line": 7777,
           "character": 16
         }
       }
@@ -588,11 +608,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9697,
+          "line": 9700,
           "character": 5
         },
         "end": {
-          "line": 9697,
+          "line": 9700,
           "character": 12
         }
       }
@@ -608,11 +628,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 434,
+          "line": 437,
           "character": 5
         },
         "end": {
-          "line": 434,
+          "line": 437,
           "character": 11
         }
       }
@@ -628,11 +648,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1476,
+          "line": 1479,
           "character": 5
         },
         "end": {
-          "line": 1476,
+          "line": 1479,
           "character": 15
         }
       }
@@ -648,11 +668,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 10423,
+          "line": 10426,
           "character": 5
         },
         "end": {
-          "line": 10423,
+          "line": 10426,
           "character": 12
         }
       }
@@ -668,11 +688,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2869,
+          "line": 2872,
           "character": 5
         },
         "end": {
-          "line": 2869,
+          "line": 2872,
           "character": 20
         }
       }
@@ -688,11 +708,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6228,
+          "line": 6231,
           "character": 5
         },
         "end": {
-          "line": 6228,
+          "line": 6231,
           "character": 18
         }
       }
@@ -708,11 +728,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9716,
+          "line": 9719,
           "character": 5
         },
         "end": {
-          "line": 9716,
+          "line": 9719,
           "character": 16
         }
       }
@@ -728,11 +748,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7986,
+          "line": 7989,
           "character": 5
         },
         "end": {
-          "line": 7986,
+          "line": 7989,
           "character": 16
         }
       }
@@ -748,11 +768,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9526,
+          "line": 9529,
           "character": 5
         },
         "end": {
-          "line": 9526,
+          "line": 9529,
           "character": 16
         }
       }
@@ -768,11 +788,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4703,
+          "line": 4706,
           "character": 5
         },
         "end": {
-          "line": 4703,
+          "line": 4706,
           "character": 19
         }
       }
@@ -788,11 +808,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4926,
+          "line": 4929,
           "character": 5
         },
         "end": {
-          "line": 4926,
+          "line": 4929,
           "character": 20
         }
       }
@@ -808,11 +828,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5912,
+          "line": 5915,
           "character": 5
         },
         "end": {
-          "line": 5912,
+          "line": 5915,
           "character": 21
         }
       }
@@ -828,11 +848,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9672,
+          "line": 9675,
           "character": 5
         },
         "end": {
-          "line": 9672,
+          "line": 9675,
           "character": 7
         }
       }
@@ -1185,11 +1205,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6440,
+          "line": 6443,
           "character": 5
         },
         "end": {
-          "line": 6440,
+          "line": 6443,
           "character": 10
         }
       }
@@ -2032,11 +2052,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2574,
+          "line": 2577,
           "character": 5
         },
         "end": {
-          "line": 2574,
+          "line": 2577,
           "character": 11
         }
       }
@@ -2495,11 +2515,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7604,
+          "line": 7607,
           "character": 5
         },
         "end": {
-          "line": 7604,
+          "line": 7607,
           "character": 15
         }
       }
@@ -2515,11 +2535,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1814,
+          "line": 1817,
           "character": 5
         },
         "end": {
-          "line": 1814,
+          "line": 1817,
           "character": 19
         }
       }
@@ -2535,11 +2555,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4487,
+          "line": 4490,
           "character": 5
         },
         "end": {
-          "line": 4487,
+          "line": 4490,
           "character": 19
         }
       }
@@ -2566,6 +2586,26 @@
     }
   },
   {
+    "name": "diags",
+    "doc": "\n  Returns diagnostics feed for OS telemetry",
+    "args_str": "()",
+    "params": [],
+    "kind": 3,
+    "location": {
+      "uri": "axon-ext://coreFuncs.trio",
+      "range": {
+        "start": {
+          "line": 6,
+          "character": 5
+        },
+        "end": {
+          "line": 6,
+          "character": 10
+        }
+      }
+    }
+  },
+  {
     "name": "dictToHttpJson",
     "doc": "\nConvenience for converting a grid to valid JSON for web api calls, e.g.\ndata: {personalizations:\n[{\n  to: [{email: \"mmelillo@albireoenergy.com\"}]}],\n  from: {email: \"mmelillo@albireoenergy.com\"},\n  subject: \"Sending with SendGrid is Fun\",\n  content: [{type: \"text/plain\", value: \"and easy to do anywhere, even with fantom!\"}\n]}\ndata.toHttpJson().callRestApi(..)",
     "args_str": "()",
@@ -2575,11 +2615,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5254,
+          "line": 5257,
           "character": 5
         },
         "end": {
-          "line": 5254,
+          "line": 5257,
           "character": 19
         }
       }
@@ -2643,11 +2683,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6498,
+          "line": 6501,
           "character": 5
         },
         "end": {
-          "line": 6498,
+          "line": 6501,
           "character": 24
         }
       }
@@ -2663,11 +2703,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9753,
+          "line": 9756,
           "character": 5
         },
         "end": {
-          "line": 9753,
+          "line": 9756,
           "character": 24
         }
       }
@@ -2683,11 +2723,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7222,
+          "line": 7225,
           "character": 5
         },
         "end": {
-          "line": 7222,
+          "line": 7225,
           "character": 20
         }
       }
@@ -2854,11 +2894,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9307,
+          "line": 9310,
           "character": 5
         },
         "end": {
-          "line": 9307,
+          "line": 9310,
           "character": 12
         }
       }
@@ -2966,11 +3006,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 508,
+          "line": 511,
           "character": 5
         },
         "end": {
-          "line": 508,
+          "line": 511,
           "character": 9
         }
       }
@@ -2986,11 +3026,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4602,
+          "line": 4605,
           "character": 5
         },
         "end": {
-          "line": 4602,
+          "line": 4605,
           "character": 19
         }
       }
@@ -3006,11 +3046,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8657,
+          "line": 8660,
           "character": 5
         },
         "end": {
-          "line": 8657,
+          "line": 8660,
           "character": 14
         }
       }
@@ -3026,11 +3066,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9939,
+          "line": 9942,
           "character": 5
         },
         "end": {
-          "line": 9939,
+          "line": 9942,
           "character": 19
         }
       }
@@ -3091,11 +3131,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6771,
+          "line": 6774,
           "character": 5
         },
         "end": {
-          "line": 6771,
+          "line": 6774,
           "character": 28
         }
       }
@@ -3111,11 +3151,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4258,
+          "line": 4261,
           "character": 5
         },
         "end": {
-          "line": 4258,
+          "line": 4261,
           "character": 27
         }
       }
@@ -3131,11 +3171,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5808,
+          "line": 5811,
           "character": 5
         },
         "end": {
-          "line": 5808,
+          "line": 5811,
           "character": 21
         }
       }
@@ -3151,11 +3191,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 848,
+          "line": 851,
           "character": 5
         },
         "end": {
-          "line": 848,
+          "line": 851,
           "character": 26
         }
       }
@@ -3214,11 +3254,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4215,
+          "line": 4218,
           "character": 5
         },
         "end": {
-          "line": 4215,
+          "line": 4218,
           "character": 11
         }
       }
@@ -3234,11 +3274,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4628,
+          "line": 4631,
           "character": 5
         },
         "end": {
-          "line": 4628,
+          "line": 4631,
           "character": 18
         }
       }
@@ -3320,11 +3360,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9283,
+          "line": 9286,
           "character": 5
         },
         "end": {
-          "line": 9283,
+          "line": 9286,
           "character": 16
         }
       }
@@ -3340,11 +3380,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8193,
+          "line": 8196,
           "character": 5
         },
         "end": {
-          "line": 8193,
+          "line": 8196,
           "character": 16
         }
       }
@@ -3360,11 +3400,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 10350,
+          "line": 10353,
           "character": 5
         },
         "end": {
-          "line": 10350,
+          "line": 10353,
           "character": 14
         }
       }
@@ -3402,11 +3442,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8829,
+          "line": 8832,
           "character": 5
         },
         "end": {
-          "line": 8829,
+          "line": 8832,
           "character": 8
         }
       }
@@ -3422,11 +3462,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7129,
+          "line": 7132,
           "character": 5
         },
         "end": {
-          "line": 7129,
+          "line": 7132,
           "character": 11
         }
       }
@@ -3442,11 +3482,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2223,
+          "line": 2226,
           "character": 5
         },
         "end": {
-          "line": 2223,
+          "line": 2226,
           "character": 14
         }
       }
@@ -3462,11 +3502,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5306,
+          "line": 5309,
           "character": 5
         },
         "end": {
-          "line": 5306,
+          "line": 5309,
           "character": 16
         }
       }
@@ -3482,11 +3522,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9236,
+          "line": 9239,
           "character": 5
         },
         "end": {
-          "line": 9236,
+          "line": 9239,
           "character": 22
         }
       }
@@ -3502,11 +3542,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5838,
+          "line": 5841,
           "character": 5
         },
         "end": {
-          "line": 5838,
+          "line": 5841,
           "character": 9
         }
       }
@@ -3522,11 +3562,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1782,
+          "line": 1785,
           "character": 5
         },
         "end": {
-          "line": 1782,
+          "line": 1785,
           "character": 12
         }
       }
@@ -3542,11 +3582,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8053,
+          "line": 8056,
           "character": 5
         },
         "end": {
-          "line": 8053,
+          "line": 8056,
           "character": 11
         }
       }
@@ -3562,11 +3602,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1234,
+          "line": 1237,
           "character": 5
         },
         "end": {
-          "line": 1234,
+          "line": 1237,
           "character": 13
         }
       }
@@ -3582,11 +3622,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1723,
+          "line": 1726,
           "character": 5
         },
         "end": {
-          "line": 1723,
+          "line": 1726,
           "character": 9
         }
       }
@@ -4011,11 +4051,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4941,
+          "line": 4944,
           "character": 5
         },
         "end": {
-          "line": 4941,
+          "line": 4944,
           "character": 16
         }
       }
@@ -4031,11 +4071,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2615,
+          "line": 2618,
           "character": 5
         },
         "end": {
-          "line": 2615,
+          "line": 2618,
           "character": 23
         }
       }
@@ -4051,11 +4091,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9148,
+          "line": 9151,
           "character": 5
         },
         "end": {
-          "line": 9148,
+          "line": 9151,
           "character": 22
         }
       }
@@ -4071,11 +4111,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8113,
+          "line": 8116,
           "character": 5
         },
         "end": {
-          "line": 8113,
+          "line": 8116,
           "character": 17
         }
       }
@@ -4091,11 +4131,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 531,
+          "line": 534,
           "character": 5
         },
         "end": {
-          "line": 531,
+          "line": 534,
           "character": 20
         }
       }
@@ -4337,11 +4377,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8646,
+          "line": 8649,
           "character": 5
         },
         "end": {
-          "line": 8646,
+          "line": 8649,
           "character": 19
         }
       }
@@ -4357,11 +4397,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 935,
+          "line": 938,
           "character": 5
         },
         "end": {
-          "line": 935,
+          "line": 938,
           "character": 19
         }
       }
@@ -4377,11 +4417,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1614,
+          "line": 1617,
           "character": 5
         },
         "end": {
-          "line": 1614,
+          "line": 1617,
           "character": 10
         }
       }
@@ -4397,11 +4437,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6665,
+          "line": 6668,
           "character": 5
         },
         "end": {
-          "line": 6665,
+          "line": 6668,
           "character": 19
         }
       }
@@ -4417,11 +4457,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 551,
+          "line": 554,
           "character": 5
         },
         "end": {
-          "line": 551,
+          "line": 554,
           "character": 19
         }
       }
@@ -4577,11 +4617,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9259,
+          "line": 9262,
           "character": 5
         },
         "end": {
-          "line": 9259,
+          "line": 9262,
           "character": 20
         }
       }
@@ -4967,11 +5007,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8361,
+          "line": 8364,
           "character": 5
         },
         "end": {
-          "line": 8361,
+          "line": 8364,
           "character": 13
         }
       }
@@ -4987,11 +5027,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5749,
+          "line": 5752,
           "character": 5
         },
         "end": {
-          "line": 5749,
+          "line": 5752,
           "character": 12
         }
       }
@@ -5051,11 +5091,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 10161,
+          "line": 10164,
           "character": 5
         },
         "end": {
-          "line": 10161,
+          "line": 10164,
           "character": 15
         }
       }
@@ -5071,11 +5111,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7925,
+          "line": 7928,
           "character": 5
         },
         "end": {
-          "line": 7925,
+          "line": 7928,
           "character": 13
         }
       }
@@ -5091,11 +5131,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6824,
+          "line": 6827,
           "character": 5
         },
         "end": {
-          "line": 6824,
+          "line": 6827,
           "character": 20
         }
       }
@@ -5111,11 +5151,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 468,
+          "line": 471,
           "character": 5
         },
         "end": {
-          "line": 468,
+          "line": 471,
           "character": 18
         }
       }
@@ -5131,11 +5171,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8565,
+          "line": 8568,
           "character": 5
         },
         "end": {
-          "line": 8565,
+          "line": 8568,
           "character": 15
         }
       }
@@ -5151,11 +5191,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9041,
+          "line": 9044,
           "character": 5
         },
         "end": {
-          "line": 9041,
+          "line": 9044,
           "character": 21
         }
       }
@@ -5171,11 +5211,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5557,
+          "line": 5560,
           "character": 5
         },
         "end": {
-          "line": 5557,
+          "line": 5560,
           "character": 17
         }
       }
@@ -5191,11 +5231,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2426,
+          "line": 2429,
           "character": 5
         },
         "end": {
-          "line": 2426,
+          "line": 2429,
           "character": 19
         }
       }
@@ -5211,11 +5251,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 10112,
+          "line": 10115,
           "character": 5
         },
         "end": {
-          "line": 10112,
+          "line": 10115,
           "character": 24
         }
       }
@@ -5231,11 +5271,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4523,
+          "line": 4526,
           "character": 5
         },
         "end": {
-          "line": 4523,
+          "line": 4526,
           "character": 19
         }
       }
@@ -5251,11 +5291,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 10203,
+          "line": 10206,
           "character": 5
         },
         "end": {
-          "line": 10203,
+          "line": 10206,
           "character": 15
         }
       }
@@ -5271,11 +5311,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8064,
+          "line": 8067,
           "character": 5
         },
         "end": {
-          "line": 8064,
+          "line": 8067,
           "character": 16
         }
       }
@@ -5291,11 +5331,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3252,
+          "line": 3255,
           "character": 5
         },
         "end": {
-          "line": 3252,
+          "line": 3255,
           "character": 17
         }
       }
@@ -5311,11 +5351,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6458,
+          "line": 6461,
           "character": 5
         },
         "end": {
-          "line": 6458,
+          "line": 6461,
           "character": 19
         }
       }
@@ -5331,11 +5371,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 10076,
+          "line": 10079,
           "character": 5
         },
         "end": {
-          "line": 10076,
+          "line": 10079,
           "character": 12
         }
       }
@@ -5351,11 +5391,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5599,
+          "line": 5602,
           "character": 5
         },
         "end": {
-          "line": 5599,
+          "line": 5602,
           "character": 11
         }
       }
@@ -5371,11 +5411,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 453,
+          "line": 456,
           "character": 5
         },
         "end": {
-          "line": 453,
+          "line": 456,
           "character": 17
         }
       }
@@ -5391,11 +5431,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6419,
+          "line": 6422,
           "character": 5
         },
         "end": {
-          "line": 6419,
+          "line": 6422,
           "character": 26
         }
       }
@@ -5411,11 +5451,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6170,
+          "line": 6173,
           "character": 5
         },
         "end": {
-          "line": 6170,
+          "line": 6173,
           "character": 20
         }
       }
@@ -5431,11 +5471,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6201,
+          "line": 6204,
           "character": 5
         },
         "end": {
-          "line": 6201,
+          "line": 6204,
           "character": 23
         }
       }
@@ -5451,11 +5491,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7740,
+          "line": 7743,
           "character": 5
         },
         "end": {
-          "line": 7740,
+          "line": 7743,
           "character": 19
         }
       }
@@ -5471,11 +5511,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3678,
+          "line": 3681,
           "character": 5
         },
         "end": {
-          "line": 3678,
+          "line": 3681,
           "character": 19
         }
       }
@@ -5491,11 +5531,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8720,
+          "line": 8723,
           "character": 5
         },
         "end": {
-          "line": 8720,
+          "line": 8723,
           "character": 12
         }
       }
@@ -5511,11 +5551,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2130,
+          "line": 2133,
           "character": 5
         },
         "end": {
-          "line": 2130,
+          "line": 2133,
           "character": 14
         }
       }
@@ -5531,11 +5571,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 10017,
+          "line": 10020,
           "character": 5
         },
         "end": {
-          "line": 10017,
+          "line": 10020,
           "character": 15
         }
       }
@@ -5551,11 +5591,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1628,
+          "line": 1631,
           "character": 5
         },
         "end": {
-          "line": 1628,
+          "line": 1631,
           "character": 14
         }
       }
@@ -5571,11 +5611,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2268,
+          "line": 2271,
           "character": 5
         },
         "end": {
-          "line": 2268,
+          "line": 2271,
           "character": 18
         }
       }
@@ -5591,11 +5631,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2946,
+          "line": 2949,
           "character": 5
         },
         "end": {
-          "line": 2946,
+          "line": 2949,
           "character": 15
         }
       }
@@ -5611,11 +5651,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 156,
+          "line": 159,
           "character": 5
         },
         "end": {
-          "line": 156,
+          "line": 159,
           "character": 13
         }
       }
@@ -5631,11 +5671,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3865,
+          "line": 3868,
           "character": 5
         },
         "end": {
-          "line": 3865,
+          "line": 3868,
           "character": 22
         }
       }
@@ -5651,11 +5691,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8301,
+          "line": 8304,
           "character": 5
         },
         "end": {
-          "line": 8301,
+          "line": 8304,
           "character": 12
         }
       }
@@ -5671,11 +5711,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 753,
+          "line": 756,
           "character": 5
         },
         "end": {
-          "line": 753,
+          "line": 756,
           "character": 25
         }
       }
@@ -5691,11 +5731,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8920,
+          "line": 8923,
           "character": 5
         },
         "end": {
-          "line": 8920,
+          "line": 8923,
           "character": 13
         }
       }
@@ -5711,11 +5751,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5360,
+          "line": 5363,
           "character": 5
         },
         "end": {
-          "line": 5360,
+          "line": 5363,
           "character": 13
         }
       }
@@ -5731,11 +5771,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7886,
+          "line": 7889,
           "character": 5
         },
         "end": {
-          "line": 7886,
+          "line": 7889,
           "character": 13
         }
       }
@@ -5815,11 +5855,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4537,
+          "line": 4540,
           "character": 5
         },
         "end": {
-          "line": 4537,
+          "line": 4540,
           "character": 12
         }
       }
@@ -5975,11 +6015,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2648,
+          "line": 2651,
           "character": 5
         },
         "end": {
-          "line": 2648,
+          "line": 2651,
           "character": 12
         }
       }
@@ -5995,11 +6035,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 424,
+          "line": 427,
           "character": 5
         },
         "end": {
-          "line": 424,
+          "line": 427,
           "character": 18
         }
       }
@@ -6015,11 +6055,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5495,
+          "line": 5498,
           "character": 5
         },
         "end": {
-          "line": 5495,
+          "line": 5498,
           "character": 18
         }
       }
@@ -7207,11 +7247,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9345,
+          "line": 9348,
           "character": 5
         },
         "end": {
-          "line": 9345,
+          "line": 9348,
           "character": 7
         }
       }
@@ -8275,11 +8315,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4657,
+          "line": 4660,
           "character": 5
         },
         "end": {
-          "line": 4657,
+          "line": 4660,
           "character": 14
         }
       }
@@ -8318,11 +8358,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5076,
+          "line": 5079,
           "character": 5
         },
         "end": {
-          "line": 5076,
+          "line": 5079,
           "character": 9
         }
       }
@@ -8406,11 +8446,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6527,
+          "line": 6530,
           "character": 5
         },
         "end": {
-          "line": 6527,
+          "line": 6530,
           "character": 8
         }
       }
@@ -8448,11 +8488,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 195,
+          "line": 198,
           "character": 5
         },
         "end": {
-          "line": 195,
+          "line": 198,
           "character": 13
         }
       }
@@ -8490,11 +8530,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2728,
+          "line": 2731,
           "character": 5
         },
         "end": {
-          "line": 2728,
+          "line": 2731,
           "character": 11
         }
       }
@@ -8510,11 +8550,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4177,
+          "line": 4180,
           "character": 5
         },
         "end": {
-          "line": 4177,
+          "line": 4180,
           "character": 12
         }
       }
@@ -8530,11 +8570,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5794,
+          "line": 5797,
           "character": 5
         },
         "end": {
-          "line": 5794,
+          "line": 5797,
           "character": 12
         }
       }
@@ -8550,11 +8590,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8497,
+          "line": 8500,
           "character": 5
         },
         "end": {
-          "line": 8497,
+          "line": 8500,
           "character": 12
         }
       }
@@ -8592,11 +8632,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9993,
+          "line": 9996,
           "character": 5
         },
         "end": {
-          "line": 9993,
+          "line": 9996,
           "character": 11
         }
       }
@@ -8635,11 +8675,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3025,
+          "line": 3028,
           "character": 5
         },
         "end": {
-          "line": 3025,
+          "line": 3028,
           "character": 24
         }
       }
@@ -8655,11 +8695,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3699,
+          "line": 3702,
           "character": 5
         },
         "end": {
-          "line": 3699,
+          "line": 3702,
           "character": 28
         }
       }
@@ -8675,11 +8715,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6295,
+          "line": 6298,
           "character": 5
         },
         "end": {
-          "line": 6295,
+          "line": 6298,
           "character": 21
         }
       }
@@ -8695,11 +8735,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6400,
+          "line": 6403,
           "character": 5
         },
         "end": {
-          "line": 6400,
+          "line": 6403,
           "character": 19
         }
       }
@@ -9521,11 +9561,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7119,
+          "line": 7122,
           "character": 5
         },
         "end": {
-          "line": 7119,
+          "line": 7122,
           "character": 17
         }
       }
@@ -9541,11 +9581,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6255,
+          "line": 6258,
           "character": 5
         },
         "end": {
-          "line": 6255,
+          "line": 6258,
           "character": 11
         }
       }
@@ -9561,11 +9601,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2757,
+          "line": 2760,
           "character": 5
         },
         "end": {
-          "line": 2757,
+          "line": 2760,
           "character": 15
         }
       }
@@ -10183,11 +10223,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3486,
+          "line": 3489,
           "character": 5
         },
         "end": {
-          "line": 3486,
+          "line": 3489,
           "character": 29
         }
       }
@@ -10203,11 +10243,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4269,
+          "line": 4272,
           "character": 5
         },
         "end": {
-          "line": 4269,
+          "line": 4272,
           "character": 29
         }
       }
@@ -10223,11 +10263,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9927,
+          "line": 9930,
           "character": 5
         },
         "end": {
-          "line": 9927,
+          "line": 9930,
           "character": 25
         }
       }
@@ -10578,11 +10618,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8546,
+          "line": 8549,
           "character": 5
         },
         "end": {
-          "line": 8546,
+          "line": 8549,
           "character": 10
         }
       }
@@ -11205,11 +11245,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 269,
+          "line": 272,
           "character": 5
         },
         "end": {
-          "line": 269,
+          "line": 272,
           "character": 16
         }
       }
@@ -11225,11 +11265,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 250,
+          "line": 253,
           "character": 5
         },
         "end": {
-          "line": 250,
+          "line": 253,
           "character": 13
         }
       }
@@ -11290,11 +11330,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 911,
+          "line": 914,
           "character": 5
         },
         "end": {
-          "line": 911,
+          "line": 914,
           "character": 22
         }
       }
@@ -11310,11 +11350,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8985,
+          "line": 8988,
           "character": 5
         },
         "end": {
-          "line": 8985,
+          "line": 8988,
           "character": 24
         }
       }
@@ -11330,11 +11370,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3664,
+          "line": 3667,
           "character": 5
         },
         "end": {
-          "line": 3664,
+          "line": 3667,
           "character": 17
         }
       }
@@ -11350,11 +11390,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2670,
+          "line": 2673,
           "character": 5
         },
         "end": {
-          "line": 2670,
+          "line": 2673,
           "character": 22
         }
       }
@@ -12034,11 +12074,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6079,
+          "line": 6082,
           "character": 5
         },
         "end": {
-          "line": 6079,
+          "line": 6082,
           "character": 14
         }
       }
@@ -12054,11 +12094,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5062,
+          "line": 5065,
           "character": 5
         },
         "end": {
-          "line": 5062,
+          "line": 5065,
           "character": 15
         }
       }
@@ -12074,11 +12114,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4958,
+          "line": 4961,
           "character": 5
         },
         "end": {
-          "line": 4958,
+          "line": 4961,
           "character": 11
         }
       }
@@ -12094,11 +12134,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2923,
+          "line": 2926,
           "character": 5
         },
         "end": {
-          "line": 2923,
+          "line": 2926,
           "character": 12
         }
       }
@@ -12114,11 +12154,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6138,
+          "line": 6141,
           "character": 5
         },
         "end": {
-          "line": 6138,
+          "line": 6141,
           "character": 14
         }
       }
@@ -12134,11 +12174,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4988,
+          "line": 4991,
           "character": 5
         },
         "end": {
-          "line": 4988,
+          "line": 4991,
           "character": 12
         }
       }
@@ -12154,11 +12194,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8853,
+          "line": 8856,
           "character": 5
         },
         "end": {
-          "line": 8853,
+          "line": 8856,
           "character": 18
         }
       }
@@ -12174,11 +12214,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3736,
+          "line": 3739,
           "character": 5
         },
         "end": {
-          "line": 3736,
+          "line": 3739,
           "character": 11
         }
       }
@@ -12194,11 +12234,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 388,
+          "line": 391,
           "character": 5
         },
         "end": {
-          "line": 388,
+          "line": 391,
           "character": 13
         }
       }
@@ -12527,11 +12567,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1953,
+          "line": 1956,
           "character": 5
         },
         "end": {
-          "line": 1953,
+          "line": 1956,
           "character": 15
         }
       }
@@ -12594,11 +12634,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3717,
+          "line": 3720,
           "character": 5
         },
         "end": {
-          "line": 3717,
+          "line": 3720,
           "character": 18
         }
       }
@@ -12614,11 +12654,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4143,
+          "line": 4146,
           "character": 5
         },
         "end": {
-          "line": 4143,
+          "line": 4146,
           "character": 25
         }
       }
@@ -12634,11 +12674,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8694,
+          "line": 8697,
           "character": 5
         },
         "end": {
-          "line": 8694,
+          "line": 8697,
           "character": 24
         }
       }
@@ -12654,11 +12694,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 733,
+          "line": 736,
           "character": 5
         },
         "end": {
-          "line": 733,
+          "line": 736,
           "character": 19
         }
       }
@@ -12742,11 +12782,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 110,
+          "line": 113,
           "character": 5
         },
         "end": {
-          "line": 110,
+          "line": 113,
           "character": 11
         }
       }
@@ -12762,11 +12802,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7674,
+          "line": 7677,
           "character": 5
         },
         "end": {
-          "line": 7674,
+          "line": 7677,
           "character": 14
         }
       }
@@ -12782,11 +12822,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2326,
+          "line": 2329,
           "character": 5
         },
         "end": {
-          "line": 2326,
+          "line": 2329,
           "character": 15
         }
       }
@@ -12802,11 +12842,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6937,
+          "line": 6940,
           "character": 5
         },
         "end": {
-          "line": 6937,
+          "line": 6940,
           "character": 13
         }
       }
@@ -12822,11 +12862,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2119,
+          "line": 2122,
           "character": 5
         },
         "end": {
-          "line": 2119,
+          "line": 2122,
           "character": 13
         }
       }
@@ -12842,11 +12882,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9108,
+          "line": 9111,
           "character": 5
         },
         "end": {
-          "line": 9108,
+          "line": 9111,
           "character": 19
         }
       }
@@ -12862,11 +12902,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1133,
+          "line": 1136,
           "character": 5
         },
         "end": {
-          "line": 1133,
+          "line": 1136,
           "character": 16
         }
       }
@@ -12882,11 +12922,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9883,
+          "line": 9886,
           "character": 5
         },
         "end": {
-          "line": 9883,
+          "line": 9886,
           "character": 18
         }
       }
@@ -12902,11 +12942,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3472,
+          "line": 3475,
           "character": 5
         },
         "end": {
-          "line": 3472,
+          "line": 3475,
           "character": 18
         }
       }
@@ -12922,11 +12962,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6359,
+          "line": 6362,
           "character": 5
         },
         "end": {
-          "line": 6359,
+          "line": 6362,
           "character": 22
         }
       }
@@ -12942,11 +12982,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5129,
+          "line": 5132,
           "character": 5
         },
         "end": {
-          "line": 5129,
+          "line": 5132,
           "character": 21
         }
       }
@@ -12962,11 +13002,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6609,
+          "line": 6612,
           "character": 5
         },
         "end": {
-          "line": 6609,
+          "line": 6612,
           "character": 17
         }
       }
@@ -12982,11 +13022,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6338,
+          "line": 6341,
           "character": 5
         },
         "end": {
-          "line": 6338,
+          "line": 6341,
           "character": 15
         }
       }
@@ -13002,11 +13042,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3382,
+          "line": 3385,
           "character": 5
         },
         "end": {
-          "line": 3382,
+          "line": 3385,
           "character": 20
         }
       }
@@ -13022,11 +13062,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8177,
+          "line": 8180,
           "character": 5
         },
         "end": {
-          "line": 8177,
+          "line": 8180,
           "character": 21
         }
       }
@@ -13042,11 +13082,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5524,
+          "line": 5527,
           "character": 5
         },
         "end": {
-          "line": 5524,
+          "line": 5527,
           "character": 21
         }
       }
@@ -13062,11 +13102,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7304,
+          "line": 7307,
           "character": 5
         },
         "end": {
-          "line": 7304,
+          "line": 7307,
           "character": 13
         }
       }
@@ -13082,11 +13122,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1752,
+          "line": 1755,
           "character": 5
         },
         "end": {
-          "line": 1752,
+          "line": 1755,
           "character": 18
         }
       }
@@ -13102,11 +13142,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 710,
+          "line": 713,
           "character": 5
         },
         "end": {
-          "line": 710,
+          "line": 713,
           "character": 15
         }
       }
@@ -13122,11 +13162,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1773,
+          "line": 1776,
           "character": 5
         },
         "end": {
-          "line": 1773,
+          "line": 1776,
           "character": 16
         }
       }
@@ -13142,11 +13182,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6752,
+          "line": 6755,
           "character": 5
         },
         "end": {
-          "line": 6752,
+          "line": 6755,
           "character": 19
         }
       }
@@ -13515,11 +13555,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3150,
+          "line": 3153,
           "character": 5
         },
         "end": {
-          "line": 3150,
+          "line": 3153,
           "character": 9
         }
       }
@@ -14630,11 +14670,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1004,
+          "line": 1007,
           "character": 5
         },
         "end": {
-          "line": 1004,
+          "line": 1007,
           "character": 14
         }
       }
@@ -14650,11 +14690,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1320,
+          "line": 1323,
           "character": 5
         },
         "end": {
-          "line": 1320,
+          "line": 1323,
           "character": 17
         }
       }
@@ -14670,11 +14710,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4158,
+          "line": 4161,
           "character": 5
         },
         "end": {
-          "line": 4158,
+          "line": 4161,
           "character": 12
         }
       }
@@ -14690,11 +14730,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8431,
+          "line": 8434,
           "character": 5
         },
         "end": {
-          "line": 8431,
+          "line": 8434,
           "character": 14
         }
       }
@@ -14710,11 +14750,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7449,
+          "line": 7452,
           "character": 5
         },
         "end": {
-          "line": 7449,
+          "line": 7452,
           "character": 10
         }
       }
@@ -14794,11 +14834,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7485,
+          "line": 7488,
           "character": 5
         },
         "end": {
-          "line": 7485,
+          "line": 7488,
           "character": 18
         }
       }
@@ -14814,11 +14854,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6319,
+          "line": 6322,
           "character": 5
         },
         "end": {
-          "line": 6319,
+          "line": 6322,
           "character": 19
         }
       }
@@ -16090,11 +16130,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4302,
+          "line": 4305,
           "character": 5
         },
         "end": {
-          "line": 4302,
+          "line": 4305,
           "character": 10
         }
       }
@@ -16155,11 +16195,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5168,
+          "line": 5171,
           "character": 5
         },
         "end": {
-          "line": 5168,
+          "line": 5171,
           "character": 14
         }
       }
@@ -16261,11 +16301,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3445,
+          "line": 3448,
           "character": 5
         },
         "end": {
-          "line": 3445,
+          "line": 3448,
           "character": 9
         }
       }
@@ -16389,11 +16429,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4694,
+          "line": 4697,
           "character": 5
         },
         "end": {
-          "line": 4694,
+          "line": 4697,
           "character": 11
         }
       }
@@ -16409,11 +16449,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2563,
+          "line": 2566,
           "character": 5
         },
         "end": {
-          "line": 2563,
+          "line": 2566,
           "character": 14
         }
       }
@@ -16868,11 +16908,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8531,
+          "line": 8534,
           "character": 5
         },
         "end": {
-          "line": 8531,
+          "line": 8534,
           "character": 15
         }
       }
@@ -16888,11 +16928,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2416,
+          "line": 2419,
           "character": 5
         },
         "end": {
-          "line": 2416,
+          "line": 2419,
           "character": 22
         }
       }
@@ -16908,11 +16948,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9502,
+          "line": 9505,
           "character": 5
         },
         "end": {
-          "line": 9502,
+          "line": 9505,
           "character": 21
         }
       }
@@ -16928,11 +16968,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3348,
+          "line": 3351,
           "character": 5
         },
         "end": {
-          "line": 3348,
+          "line": 3351,
           "character": 16
         }
       }
@@ -16948,11 +16988,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4082,
+          "line": 4085,
           "character": 5
         },
         "end": {
-          "line": 4082,
+          "line": 4085,
           "character": 15
         }
       }
@@ -16968,11 +17008,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1410,
+          "line": 1413,
           "character": 5
         },
         "end": {
-          "line": 1410,
+          "line": 1413,
           "character": 12
         }
       }
@@ -16988,11 +17028,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7106,
+          "line": 7109,
           "character": 5
         },
         "end": {
-          "line": 7106,
+          "line": 7109,
           "character": 25
         }
       }
@@ -17008,11 +17048,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8097,
+          "line": 8100,
           "character": 5
         },
         "end": {
-          "line": 8097,
+          "line": 8100,
           "character": 18
         }
       }
@@ -17028,11 +17068,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2630,
+          "line": 2633,
           "character": 5
         },
         "end": {
-          "line": 2630,
+          "line": 2633,
           "character": 18
         }
       }
@@ -17048,11 +17088,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2985,
+          "line": 2988,
           "character": 5
         },
         "end": {
-          "line": 2985,
+          "line": 2988,
           "character": 21
         }
       }
@@ -17068,11 +17108,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9772,
+          "line": 9775,
           "character": 5
         },
         "end": {
-          "line": 9772,
+          "line": 9775,
           "character": 13
         }
       }
@@ -17088,11 +17128,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2043,
+          "line": 2046,
           "character": 5
         },
         "end": {
-          "line": 2043,
+          "line": 2046,
           "character": 16
         }
       }
@@ -17108,11 +17148,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 352,
+          "line": 355,
           "character": 5
         },
         "end": {
-          "line": 352,
+          "line": 355,
           "character": 17
         }
       }
@@ -17128,11 +17168,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3184,
+          "line": 3187,
           "character": 5
         },
         "end": {
-          "line": 3184,
+          "line": 3187,
           "character": 20
         }
       }
@@ -17212,11 +17252,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3175,
+          "line": 3178,
           "character": 5
         },
         "end": {
-          "line": 3175,
+          "line": 3178,
           "character": 19
         }
       }
@@ -17232,11 +17272,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8125,
+          "line": 8128,
           "character": 5
         },
         "end": {
-          "line": 8125,
+          "line": 8128,
           "character": 21
         }
       }
@@ -17252,11 +17292,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6762,
+          "line": 6765,
           "character": 5
         },
         "end": {
-          "line": 6762,
+          "line": 6765,
           "character": 20
         }
       }
@@ -17272,11 +17312,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1743,
+          "line": 1746,
           "character": 5
         },
         "end": {
-          "line": 1743,
+          "line": 1746,
           "character": 21
         }
       }
@@ -17314,11 +17354,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7048,
+          "line": 7051,
           "character": 5
         },
         "end": {
-          "line": 7048,
+          "line": 7051,
           "character": 17
         }
       }
@@ -17334,11 +17374,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9605,
+          "line": 9608,
           "character": 5
         },
         "end": {
-          "line": 9605,
+          "line": 9608,
           "character": 22
         }
       }
@@ -17467,11 +17507,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 578,
+          "line": 581,
           "character": 5
         },
         "end": {
-          "line": 578,
+          "line": 581,
           "character": 20
         }
       }
@@ -17487,11 +17527,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 260,
+          "line": 263,
           "character": 5
         },
         "end": {
-          "line": 260,
+          "line": 263,
           "character": 23
         }
       }
@@ -17507,11 +17547,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9707,
+          "line": 9710,
           "character": 5
         },
         "end": {
-          "line": 9707,
+          "line": 9710,
           "character": 22
         }
       }
@@ -17527,11 +17567,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7713,
+          "line": 7716,
           "character": 5
         },
         "end": {
-          "line": 7713,
+          "line": 7716,
           "character": 19
         }
       }
@@ -17836,11 +17876,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7282,
+          "line": 7285,
           "character": 5
         },
         "end": {
-          "line": 7282,
+          "line": 7285,
           "character": 13
         }
       }
@@ -17856,11 +17896,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2194,
+          "line": 2197,
           "character": 5
         },
         "end": {
-          "line": 2194,
+          "line": 2197,
           "character": 21
         }
       }
@@ -17876,11 +17916,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9575,
+          "line": 9578,
           "character": 5
         },
         "end": {
-          "line": 9575,
+          "line": 9578,
           "character": 18
         }
       }
@@ -17896,11 +17936,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 10192,
+          "line": 10195,
           "character": 5
         },
         "end": {
-          "line": 10192,
+          "line": 10195,
           "character": 7
         }
       }
@@ -17916,11 +17956,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 4617,
+          "line": 4620,
           "character": 5
         },
         "end": {
-          "line": 4617,
+          "line": 4620,
           "character": 13
         }
       }
@@ -17936,11 +17976,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9865,
+          "line": 9868,
           "character": 5
         },
         "end": {
-          "line": 9865,
+          "line": 9868,
           "character": 11
         }
       }
@@ -17956,11 +17996,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5437,
+          "line": 5440,
           "character": 5
         },
         "end": {
-          "line": 5437,
+          "line": 5440,
           "character": 14
         }
       }
@@ -17976,11 +18016,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6685,
+          "line": 6688,
           "character": 5
         },
         "end": {
-          "line": 6685,
+          "line": 6688,
           "character": 14
         }
       }
@@ -17996,11 +18036,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 7476,
+          "line": 7479,
           "character": 5
         },
         "end": {
-          "line": 7476,
+          "line": 7479,
           "character": 14
         }
       }
@@ -18016,11 +18056,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1796,
+          "line": 1799,
           "character": 5
         },
         "end": {
-          "line": 1796,
+          "line": 1799,
           "character": 14
         }
       }
@@ -18036,11 +18076,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2016,
+          "line": 2019,
           "character": 5
         },
         "end": {
-          "line": 2016,
+          "line": 2019,
           "character": 16
         }
       }
@@ -18056,11 +18096,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 10058,
+          "line": 10061,
           "character": 5
         },
         "end": {
-          "line": 10058,
+          "line": 10061,
           "character": 20
         }
       }
@@ -18076,11 +18116,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 8471,
+          "line": 8474,
           "character": 5
         },
         "end": {
-          "line": 8471,
+          "line": 8474,
           "character": 10
         }
       }
@@ -18096,11 +18136,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5446,
+          "line": 5449,
           "character": 5
         },
         "end": {
-          "line": 5446,
+          "line": 5449,
           "character": 12
         }
       }
@@ -18116,11 +18156,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 1171,
+          "line": 1174,
           "character": 5
         },
         "end": {
-          "line": 1171,
+          "line": 1174,
           "character": 12
         }
       }
@@ -18136,11 +18176,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9460,
+          "line": 9463,
           "character": 5
         },
         "end": {
-          "line": 9460,
+          "line": 9463,
           "character": 14
         }
       }
@@ -18156,11 +18196,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 5590,
+          "line": 5593,
           "character": 5
         },
         "end": {
-          "line": 5590,
+          "line": 5593,
           "character": 18
         }
       }
@@ -18176,11 +18216,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 9469,
+          "line": 9472,
           "character": 5
         },
         "end": {
-          "line": 9469,
+          "line": 9472,
           "character": 16
         }
       }
@@ -18196,11 +18236,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2737,
+          "line": 2740,
           "character": 5
         },
         "end": {
-          "line": 2737,
+          "line": 2740,
           "character": 20
         }
       }
@@ -18216,11 +18256,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 6108,
+          "line": 6111,
           "character": 5
         },
         "end": {
-          "line": 6108,
+          "line": 6111,
           "character": 14
         }
       }
@@ -18236,11 +18276,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 3749,
+          "line": 3752,
           "character": 5
         },
         "end": {
-          "line": 3749,
+          "line": 3752,
           "character": 12
         }
       }
@@ -18256,11 +18296,11 @@
       "uri": "axon-ext://coreFuncs.trio",
       "range": {
         "start": {
-          "line": 2686,
+          "line": 2689,
           "character": 5
         },
         "end": {
-          "line": 2686,
+          "line": 2689,
           "character": 18
         }
       }
@@ -18327,6 +18367,26 @@
         "end": {
           "line": 1493,
           "character": 29
+        }
+      }
+    }
+  },
+  {
+    "name": "yield",
+    "doc": "\n  Internal func to yield history data for a hisFunc in computed histories",
+    "args_str": "()",
+    "params": [],
+    "kind": 3,
+    "location": {
+      "uri": "axon-ext://coreFuncs.trio",
+      "range": {
+        "start": {
+          "line": 0,
+          "character": 5
+        },
+        "end": {
+          "line": 0,
+          "character": 10
         }
       }
     }
