@@ -33,6 +33,28 @@ func TestBuildSignatureHelp(t *testing.T) {
 	}
 }
 
+func TestModeSwitchRebuildsCoreSourcePreference(t *testing.T) {
+	t.Parallel()
+	mgr, err := NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	variants := mgr.coreVariants["read"]
+	if len(variants) == 0 {
+		t.Fatal("expected cached variants for read")
+	}
+	mgr.SetMode(ModeDefs)
+	defs := mgr.CoreFuncs["read"]
+	mgr.SetMode(ModeSpecs)
+	specs := mgr.CoreFuncs["read"]
+	if defs.SourceModel != "defs" {
+		t.Fatalf("expected defs mode to pick defs variant, got %#v", defs)
+	}
+	if specs.SourceModel != "specs" && specs.SourceModel != "defs" {
+		t.Fatalf("expected specs mode to resolve a known variant, got %#v", specs)
+	}
+}
+
 func TestBuildHoverIncludesSourceAndTrimmedDocs(t *testing.T) {
 	t.Parallel()
 	mgr, err := NewManager()
@@ -216,6 +238,64 @@ static Dict myAxonFunc(Dict arg1, Dict arg2) {
 	symbols := mgr.GetDocumentSymbols(uri)
 	if len(symbols) != 1 || symbols[0].Name != "myAxonFunc" {
 		t.Fatalf("unexpected fantom document symbols: %#v", symbols)
+	}
+}
+
+func TestSpecsModeIndexesXetoCallableFunctions(t *testing.T) {
+	t.Parallel()
+	mgr, err := NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr.SetMode(ModeSpecs)
+	uri := "file:///workspace/funcs.xeto"
+	mgr.UpdateDocument(uri, `+Funcs {
+  // docs
+  addExample: Func { a: Number, b: Number, returns: Number
+    <axon:---
+    a + b
+    --->
+  }
+}`)
+	fn, ok := mgr.FindFunction("addExample")
+	if !ok {
+		t.Fatal("expected addExample to be indexed in specs mode")
+	}
+	if fn.SourceID != "workspaceXetoFunc" {
+		t.Fatalf("expected xeto source id, got %#v", fn)
+	}
+	if fn.ReturnType != "Number" {
+		t.Fatalf("expected return type from xeto declaration, got %#v", fn)
+	}
+	symbols := mgr.GetDocumentSymbols(uri)
+	if len(symbols) != 1 || symbols[0].Name != "addExample" {
+		t.Fatalf("unexpected xeto document symbols: %#v", symbols)
+	}
+}
+
+func TestAutoModePrefersXetoOverFantomWhenPresent(t *testing.T) {
+	t.Parallel()
+	mgr, err := NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr.SetMode(ModeAuto)
+	mgr.UpdateDocument("file:///workspace/http.funcs.xeto", `+Funcs {
+  httpSiteUri: Func { returns: Uri }
+}`)
+	mgr.UpdateDocument("file:///workspace/HttpFuncs.fan", `**
+** docs
+**
+@Axon
+static Uri httpSiteUri() {
+}
+`)
+	fn, ok := mgr.FindFunction("httpSiteUri")
+	if !ok {
+		t.Fatal("expected httpSiteUri to resolve")
+	}
+	if fn.SourceID != "workspaceXetoFunc" {
+		t.Fatalf("expected auto mode to prefer xeto callable declaration, got %#v", fn)
 	}
 }
 

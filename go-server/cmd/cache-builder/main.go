@@ -13,6 +13,17 @@ import (
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/trio"
 )
 
+type sourceDescriptor struct {
+	ID           string
+	Kind         string
+	Model        string
+	Version      string
+	Root         string
+	GitHubBase   string
+	LocalPrefix  string
+	CoreTrioFile string
+}
+
 type location struct {
 	URI   string `json:"uri"`
 	Range *struct {
@@ -26,19 +37,27 @@ type position struct {
 	Character int `json:"character"`
 }
 
-type serializedFunction struct {
-	Name     string    `json:"name"`
-	Doc      string    `json:"doc"`
-	ArgsStr  string    `json:"args_str"`
-	Params   []string  `json:"params"`
-	Kind     int       `json:"kind"`
-	Location *location `json:"location,omitempty"`
+type serializedVariant struct {
+	Name          string    `json:"name"`
+	Doc           string    `json:"doc"`
+	ArgsStr       string    `json:"args_str"`
+	Params        []string  `json:"params"`
+	ReturnType    string    `json:"return_type,omitempty"`
+	Kind          int       `json:"kind"`
+	Location      *location `json:"location,omitempty"`
+	SourceKind    string    `json:"source_kind"`
+	SourceModel   string    `json:"source_model"`
+	SourceVersion string    `json:"source_version"`
+	SourceID      string    `json:"source_id"`
+	SourceRoot    string    `json:"source_root,omitempty"`
+}
+
+type serializedCache struct {
+	Functions map[string][]serializedVariant `json:"functions"`
 }
 
 func main() {
 	root := flag.String("root", ".", "repository root")
-	githubBase := flag.String("github-base", os.Getenv("GITHUB_BASE"), "base GitHub URL")
-	localPrefix := flag.String("local-prefix", os.Getenv("LOCAL_PREFIX"), "local path prefix for GitHub conversion")
 	flag.Parse()
 
 	repoRoot, err := filepath.Abs(*root)
@@ -46,42 +65,44 @@ func main() {
 		panic(err)
 	}
 	coreSource := filepath.Join(repoRoot, "cache_sources", "coreFuncs.trio")
-	haxallPath := filepath.Join(repoRoot, "cache_sources", "haxall")
 	assetJSON := filepath.Join(repoRoot, "go-server", "internal", "cache", "assets", "function_cache.json")
 	assetCore := filepath.Join(repoRoot, "go-server", "internal", "cache", "assets", "coreFuncs.trio")
 
-	functions := map[string]serializedFunction{}
-	for _, fn := range trio.ParseFile(coreSource) {
-		functions[fn.Name] = serializeTrio(fn, *githubBase, *localPrefix)
+	sources := []sourceDescriptor{
+		{
+			ID:           "coreDefs",
+			Kind:         "core",
+			Model:        "defs",
+			Version:      "3.1.12",
+			Root:         filepath.Join(repoRoot, "cache_sources"),
+			CoreTrioFile: coreSource,
+		},
+		{
+			ID:          "haxall31",
+			Kind:        "haxall",
+			Model:       "defs",
+			Version:     "3.1.12",
+			Root:        filepath.Join(repoRoot, "cache_sources", "haxall-3.1.12"),
+			GitHubBase:  strings.TrimSpace(os.Getenv("GITHUB_BASE_3")),
+			LocalPrefix: strings.TrimSpace(os.Getenv("LOCAL_PREFIX_3")),
+		},
+		{
+			ID:          "haxall40",
+			Kind:        "haxall",
+			Model:       "specs",
+			Version:     "4.0.5",
+			Root:        filepath.Join(repoRoot, "cache_sources", "haxall-4.0.5"),
+			GitHubBase:  strings.TrimSpace(os.Getenv("GITHUB_BASE_4")),
+			LocalPrefix: strings.TrimSpace(os.Getenv("LOCAL_PREFIX_4")),
+		},
 	}
-	_ = filepath.WalkDir(haxallPath, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d == nil || d.IsDir() {
-			return nil
-		}
-		switch {
-		case strings.HasSuffix(path, ".trio"):
-			for _, fn := range trio.ParseFile(path) {
-				functions[fn.Name] = serializeTrio(fn, *githubBase, *localPrefix)
-			}
-		case strings.HasSuffix(path, ".fan"):
-			for _, fn := range fantom.ParseFile(path) {
-				functions[fn.Name] = serializeFantom(fn, *githubBase, *localPrefix)
-			}
-		}
-		return nil
-	})
 
-	list := make([]serializedFunction, 0, len(functions))
-	keys := make([]string, 0, len(functions))
-	for name := range functions {
-		keys = append(keys, name)
+	functions := map[string][]serializedVariant{}
+	for _, source := range sources {
+		collectSource(functions, source)
 	}
-	sort.Strings(keys)
-	for _, name := range keys {
-		fn := functions[name]
-		list = append(list, fn)
-	}
-	data, err := json.MarshalIndent(list, "", "  ")
+	sortCache(functions)
+	data, err := json.MarshalIndent(serializedCache{Functions: functions}, "", "  ")
 	if err != nil {
 		panic(err)
 	}
@@ -95,32 +116,102 @@ func main() {
 	if err := os.WriteFile(assetCore, coreData, 0o644); err != nil {
 		panic(err)
 	}
-	fmt.Printf("Wrote %d functions\n", len(list))
+	count := 0
+	for _, variants := range functions {
+		count += len(variants)
+	}
+	fmt.Printf("Wrote %d variants across %d function names\n", count, len(functions))
 }
 
-func serializeTrio(fn trio.ParsedFunction, githubBase, localPrefix string) serializedFunction {
-	return serializedFunction{
-		Name:     fn.Name,
-		Doc:      fn.Doc,
-		ArgsStr:  fn.ArgsStr,
-		Params:   fn.Params,
-		Kind:     fn.Kind,
-		Location: serializeLocationWithRange(fn.URI, fn.StartLine, fn.StartChar, fn.EndLine, fn.EndChar, githubBase, localPrefix),
+func collectSource(functions map[string][]serializedVariant, source sourceDescriptor) {
+	if source.CoreTrioFile != "" {
+		for _, fn := range trio.ParseFile(source.CoreTrioFile) {
+			functions[fn.Name] = append(functions[fn.Name], serializeTrio(fn, source))
+		}
+		return
+	}
+	info, err := os.Stat(source.Root)
+	if err != nil || !info.IsDir() {
+		return
+	}
+	_ = filepath.WalkDir(source.Root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d == nil || d.IsDir() {
+			return nil
+		}
+		switch {
+		case strings.HasSuffix(path, ".trio"):
+			for _, fn := range trio.ParseFile(path) {
+				functions[fn.Name] = append(functions[fn.Name], serializeTrio(fn, source))
+			}
+		case strings.HasSuffix(path, ".fan"):
+			for _, fn := range fantom.ParseFile(path) {
+				functions[fn.Name] = append(functions[fn.Name], serializeFantom(fn, source))
+			}
+		}
+		return nil
+	})
+}
+
+func sortCache(functions map[string][]serializedVariant) {
+	for name := range functions {
+		sort.Slice(functions[name], func(i, j int) bool {
+			a := functions[name][i]
+			b := functions[name][j]
+			if a.SourceModel != b.SourceModel {
+				return a.SourceModel < b.SourceModel
+			}
+			if a.SourceVersion != b.SourceVersion {
+				return a.SourceVersion < b.SourceVersion
+			}
+			if a.SourceID != b.SourceID {
+				return a.SourceID < b.SourceID
+			}
+			return locationURI(a.Location) < locationURI(b.Location)
+		})
 	}
 }
 
-func serializeFantom(fn fantom.ParsedFunction, githubBase, localPrefix string) serializedFunction {
-	return serializedFunction{
-		Name:     fn.Name,
-		Doc:      fn.Doc,
-		ArgsStr:  fn.ArgsStr,
-		Params:   fn.Params,
-		Kind:     fn.Kind,
-		Location: serializeLocationWithRange(fn.URI, fn.StartLine, fn.StartChar, fn.EndLine, fn.EndChar, githubBase, localPrefix),
+func locationURI(loc *location) string {
+	if loc == nil {
+		return ""
+	}
+	return loc.URI
+}
+
+func serializeTrio(fn trio.ParsedFunction, source sourceDescriptor) serializedVariant {
+	return serializedVariant{
+		Name:          fn.Name,
+		Doc:           fn.Doc,
+		ArgsStr:       fn.ArgsStr,
+		Params:        fn.Params,
+		ReturnType:    fn.ReturnType,
+		Kind:          fn.Kind,
+		Location:      serializeLocationWithRange(fn.URI, fn.StartLine, fn.StartChar, fn.EndLine, fn.EndChar, source),
+		SourceKind:    source.Kind,
+		SourceModel:   source.Model,
+		SourceVersion: source.Version,
+		SourceID:      source.ID,
+		SourceRoot:    source.Root,
 	}
 }
 
-func serializeLocationWithRange(uri string, startLine, startChar, endLine, endChar int, githubBase, localPrefix string) *location {
+func serializeFantom(fn fantom.ParsedFunction, source sourceDescriptor) serializedVariant {
+	return serializedVariant{
+		Name:          fn.Name,
+		Doc:           fn.Doc,
+		ArgsStr:       fn.ArgsStr,
+		Params:        fn.Params,
+		Kind:          fn.Kind,
+		Location:      serializeLocationWithRange(fn.URI, fn.StartLine, fn.StartChar, fn.EndLine, fn.EndChar, source),
+		SourceKind:    source.Kind,
+		SourceModel:   source.Model,
+		SourceVersion: source.Version,
+		SourceID:      source.ID,
+		SourceRoot:    source.Root,
+	}
+}
+
+func serializeLocationWithRange(uri string, startLine, startChar, endLine, endChar int, source sourceDescriptor) *location {
 	if uri == "" {
 		return nil
 	}
@@ -133,10 +224,10 @@ func serializeLocationWithRange(uri string, startLine, startChar, endLine, endCh
 			End:   position{Line: endLine, Character: endChar},
 		}}
 	}
-	if githubBase != "" && localPrefix != "" {
-		prefix := "file://" + filepath.ToSlash(localPrefix)
+	if source.GitHubBase != "" && source.LocalPrefix != "" {
+		prefix := "file://" + filepath.ToSlash(strings.TrimRight(source.LocalPrefix, "/"))
 		if strings.HasPrefix(uri, prefix) {
-			return &location{URI: strings.TrimRight(githubBase, "/") + "/" + strings.TrimPrefix(uri, prefix+"/"), Range: &struct {
+			return &location{URI: strings.TrimRight(source.GitHubBase, "/") + "/" + strings.TrimPrefix(uri, prefix+"/"), Range: &struct {
 				Start position `json:"start"`
 				End   position `json:"end"`
 			}{

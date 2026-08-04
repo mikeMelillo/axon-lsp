@@ -30,18 +30,30 @@ type Location struct {
 }
 
 type Symbol struct {
-	Name       string
-	Qualified  string
-	Kind       SymbolKind
-	Doc        string
-	ArgsStr    string
-	Params     []string
-	ReturnType string
-	ItemKind   int
-	Location   *Location
-	Origin     SymbolOrigin
-	SourceRoot string
+	Name          string
+	Qualified     string
+	Kind          SymbolKind
+	Doc           string
+	ArgsStr       string
+	Params        []string
+	ReturnType    string
+	ItemKind      int
+	Location      *Location
+	Origin        SymbolOrigin
+	SourceRoot    string
+	SourceKind    string
+	SourceModel   string
+	SourceVersion string
+	SourceID      string
 }
+
+type Mode string
+
+const (
+	ModeAuto  Mode = "auto"
+	ModeDefs  Mode = "defs"
+	ModeSpecs Mode = "specs"
+)
 
 type ScanRootKind string
 

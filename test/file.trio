@@ -14,6 +14,7 @@ src:
         var: {input: "Str", defVal:Span(thisMonth)} //lspignore
     }
         hisRead(point, dates)
+        myTestFantomFunction()
         myTestFantomFunction(abcd,efg)
         data: [
             {item: 123, funcName: "dontReadMePlease()"},

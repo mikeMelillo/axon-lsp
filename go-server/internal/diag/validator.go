@@ -14,7 +14,17 @@ var keywords = map[string]struct{}{
 }
 
 func Validate(uri string, source string, manager *index.Manager) []index.Diagnostic {
-	manager.ClearReferencesForURI(uri)
+	return validate(uri, source, manager, true)
+}
+
+func ValidateRegion(uri string, source string, manager *index.Manager, clearReferences bool) []index.Diagnostic {
+	return validate(uri, source, manager, clearReferences)
+}
+
+func validate(uri string, source string, manager *index.Manager, clearReferences bool) []index.Diagnostic {
+	if clearReferences {
+		manager.ClearReferencesForURI(uri)
+	}
 	diagnostics := []index.Diagnostic{}
 	localFuncs, paramScopes := parser.ParseLocalFunctions(source)
 	lines := strings.Split(source, "\n")

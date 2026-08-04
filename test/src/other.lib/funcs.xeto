@@ -1,0 +1,19 @@
++Funcs {
+
+  mikeConcat: Func { a: Str, b: Str, returns: Str 
+  
+    <axon:---
+        
+        
+    --->
+  }
+
+  wrapper: Func {foo: Str, bar: Number, returns: Str
+  
+    <axon:---
+        
+    --->
+
+  }
+
+}

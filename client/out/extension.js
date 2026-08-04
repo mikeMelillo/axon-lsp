@@ -67,15 +67,17 @@ function activate(context) {
         // Must match the language ID in package.json
         documentSelector: [
             { scheme: 'file', language: 'axon' },
+            { scheme: 'file', language: 'xeto' },
             { scheme: 'file', language: 'fantom' },
-            { scheme: 'file', pattern: '**/*.fan' }
+            { scheme: 'file', pattern: '**/*.fan' },
+            { scheme: 'file', pattern: '**/*.xeto' }
         ],
         initializationOptions: {
             settings: getServerSettings()
         },
         synchronize: {
             // Notify the server about file changes in the workspace
-            fileEvents: vscode_1.workspace.createFileSystemWatcher('**/{*.axon,*.trio,*.fan}')
+            fileEvents: vscode_1.workspace.createFileSystemWatcher('**/{*.axon,*.trio,*.fan,*.xeto}')
         },
         outputChannel: outputChannel,
         traceOutputChannel: vscode_1.window.createOutputChannel('Axon LSP Trace'),
@@ -117,7 +119,8 @@ function getServerSettings() {
     const workspaceRoot = vscode_1.workspace.workspaceFolders?.[0]?.uri.fsPath;
     return {
         haxallPaths: normalizeConfiguredPaths(config.get('haxallPaths', []), workspaceRoot),
-        externalPaths: normalizeConfiguredPaths(config.get('externalPaths', []), workspaceRoot)
+        externalPaths: normalizeConfiguredPaths(config.get('externalPaths', []), workspaceRoot),
+        mode: config.get('mode', 'auto')
     };
 }
 function normalizeConfiguredPaths(paths, workspaceRoot) {

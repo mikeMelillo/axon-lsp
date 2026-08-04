@@ -2,7 +2,7 @@
   "name": "axon-lsp",
   "displayName": "Axon LSP (Project Haystack)",
   "description": "LSP and Syntax Highlighting for the Axon programming language",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "publisher": "mikeMelillo",
   "engines": {
     "vscode": "^1.80.0"
@@ -17,6 +17,11 @@
         "aliases": ["Axon", "axon"],
         "extensions": [".axon", ".trio"],
         "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "xeto",
+        "aliases": ["Xeto", "xeto"],
+        "extensions": [".xeto"]
       },
       {
         "id": "fantom",
@@ -36,6 +41,12 @@
           "type": "array",
           "default": [],
           "description": "Additional paths to scan for Axon functions outside the current workspace. Scanned recursively up to 4 directory levels."
+        },
+        "axonLsp.mode": {
+          "type": "string",
+          "enum": ["auto", "defs", "specs"],
+          "default": "auto",
+          "description": "Choose whether bundled function metadata prefers legacy defs, newer specs, or decides automatically based on future workspace support."
         }
       }
     },

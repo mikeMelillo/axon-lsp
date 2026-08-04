@@ -1,0 +1,6 @@
++Funcs {
+
+  // Primary HTTP or HTTPS Uri configured via `siteUri` in HTTP settings
+  myTestFunc: Func { returns: Uri }
+
+}

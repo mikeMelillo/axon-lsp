@@ -33,6 +33,7 @@ type initializationOptions struct {
 type settingsPayload struct {
 	HaxallPaths   []string `json:"haxallPaths"`
 	ExternalPaths []string `json:"externalPaths"`
+	Mode          string   `json:"mode"`
 }
 
 type textDocumentIdentifier struct {

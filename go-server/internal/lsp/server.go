@@ -15,6 +15,7 @@ import (
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/diag"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/index"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/resolver"
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/xeto"
 )
 
 const Version = "0.2.0"
@@ -78,6 +79,7 @@ func (s *Server) handle(msg requestMessage) error {
 		if params.InitializationOptions != nil {
 			s.settings = params.InitializationOptions.Settings
 		}
+		s.manager.SetMode(parseModeSetting(s.settings.Mode))
 		return s.writeResponse(msg.ID, initializeResult{
 			Capabilities: serverCapabilities{
 				TextDocumentSync:        textDocumentSyncOptions{OpenClose: true, Change: 1, Save: saveOptions{IncludeText: false}},
@@ -105,6 +107,7 @@ func (s *Server) handle(msg requestMessage) error {
 		}
 		s.settings = params.Settings
 		if s.manager != nil {
+			s.manager.SetMode(parseModeSetting(params.Settings.Mode))
 			s.manager.SetExtraRoots(scanRootsFromSettings(params.Settings))
 		}
 		return nil
@@ -151,6 +154,15 @@ func (s *Server) handle(msg requestMessage) error {
 	case "textDocument/completion":
 		if s.manager == nil {
 			return s.writeResponse(msg.ID, index.CompletionList{IsIncomplete: false, Items: []index.CompletionItem{}}, nil)
+		}
+		var params completionParams
+		if err := json.Unmarshal(msg.Params, &params); err != nil {
+			return err
+		}
+		if strings.HasSuffix(pathFromURI(params.TextDocument.URI), ".xeto") {
+			if _, _, _, ok := s.embeddedRegionAt(params.TextDocument.URI, params.Position); !ok {
+				return s.writeResponse(msg.ID, index.CompletionList{IsIncomplete: false, Items: []index.CompletionItem{}}, nil)
+			}
 		}
 		return s.writeResponse(msg.ID, s.manager.GetCompletions(), nil)
 	case "textDocument/definition":
@@ -220,6 +232,17 @@ func scanRootsFromSettings(settings settingsPayload) []index.ScanRoot {
 	return roots
 }
 
+func parseModeSetting(value string) index.Mode {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case string(index.ModeDefs):
+		return index.ModeDefs
+	case string(index.ModeSpecs):
+		return index.ModeSpecs
+	default:
+		return index.ModeAuto
+	}
+}
+
 func (s *Server) handleDocumentSymbols(msg requestMessage) error {
 	if s.manager == nil {
 		return s.writeResponse(msg.ID, []index.DocumentSymbol{}, nil)
@@ -254,6 +277,15 @@ func (s *Server) handleDefinition(msg requestMessage) error {
 	if !ok {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
+	if regionResult, handled, err := s.handleEmbeddedDefinition(params.TextDocument.URI, params.Position, msg.ID); handled {
+		if err != nil {
+			return err
+		}
+		return s.writeResponse(msg.ID, regionResult, nil)
+	}
+	if strings.HasSuffix(pathFromURI(params.TextDocument.URI), ".xeto") {
+		return s.writeResponse(msg.ID, nil, nil)
+	}
 	match, ok := resolver.WordAt(line, params.Position.Character)
 	if !ok {
 		return s.writeResponse(msg.ID, nil, nil)
@@ -271,6 +303,15 @@ func (s *Server) handleHover(msg requestMessage) error {
 	}
 	line, ok := s.lineAt(params.TextDocument.URI, params.Position.Line)
 	if !ok {
+		return s.writeResponse(msg.ID, nil, nil)
+	}
+	if hover, handled, err := s.handleEmbeddedHover(params.TextDocument.URI, params.Position); handled {
+		if err != nil {
+			return err
+		}
+		return s.writeResponse(msg.ID, hover, nil)
+	}
+	if strings.HasSuffix(pathFromURI(params.TextDocument.URI), ".xeto") {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
 	match, ok := resolver.WordAt(line, params.Position.Character)
@@ -296,6 +337,15 @@ func (s *Server) handleSignatureHelp(msg requestMessage) error {
 	}
 	line, ok := s.lineAt(params.TextDocument.URI, params.Position.Line)
 	if !ok {
+		return s.writeResponse(msg.ID, nil, nil)
+	}
+	if help, handled, err := s.handleEmbeddedSignatureHelp(params.TextDocument.URI, params.Position); handled {
+		if err != nil {
+			return err
+		}
+		return s.writeResponse(msg.ID, help, nil)
+	}
+	if strings.HasSuffix(pathFromURI(params.TextDocument.URI), ".xeto") {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
 	for _, match := range resolver.AllWords(line) {
@@ -344,7 +394,125 @@ func (s *Server) publishDiagnostics(uri string) error {
 		return nil
 	}
 	diagnostics := diag.Validate(uri, doc, s.manager)
+	if strings.HasSuffix(pathFromURI(uri), ".xeto") {
+		diagnostics = s.validateEmbeddedAxon(uri, doc)
+	}
 	return s.writeNotification("textDocument/publishDiagnostics", publishDiagnosticsParams{URI: uri, Diagnostics: diagnostics})
+}
+
+func (s *Server) handleEmbeddedDefinition(uri string, pos index.Position, _ json.RawMessage) (*index.Location, bool, error) {
+	region, _, innerPos, ok := s.embeddedRegionAt(uri, pos)
+	if !ok {
+		return nil, false, nil
+	}
+	line, ok := region.innerLine(innerPos.Line)
+	if !ok {
+		return nil, true, nil
+	}
+	match, ok := resolver.WordAt(line, innerPos.Character)
+	if !ok {
+		return nil, true, nil
+	}
+	return s.manager.GetDefinition(match.Word), true, nil
+}
+
+func (s *Server) handleEmbeddedHover(uri string, pos index.Position) (*index.Hover, bool, error) {
+	region, _, innerPos, ok := s.embeddedRegionAt(uri, pos)
+	if !ok {
+		return nil, false, nil
+	}
+	line, ok := region.innerLine(innerPos.Line)
+	if !ok {
+		return nil, true, nil
+	}
+	match, ok := resolver.WordAt(line, innerPos.Character)
+	if !ok {
+		return nil, true, nil
+	}
+	return s.manager.BuildHover(match.Word), true, nil
+}
+
+func (s *Server) handleEmbeddedSignatureHelp(uri string, pos index.Position) (*index.SignatureHelp, bool, error) {
+	region, _, innerPos, ok := s.embeddedRegionAt(uri, pos)
+	if !ok {
+		return nil, false, nil
+	}
+	line, ok := region.innerLine(innerPos.Line)
+	if !ok {
+		return nil, true, nil
+	}
+	for _, match := range resolver.AllWords(line) {
+		if match.End <= innerPos.Character {
+			if help := s.manager.BuildSignatureHelp(match.Word); help != nil {
+				return help, true, nil
+			}
+		}
+	}
+	return nil, true, nil
+}
+
+func (s *Server) validateEmbeddedAxon(uri, doc string) []index.Diagnostic {
+	parsed := xeto.ParseURIContent(uri, doc)
+	if len(parsed) == 0 {
+		return nil
+	}
+	all := []index.Diagnostic{}
+	first := true
+	for _, fn := range parsed {
+		if fn.Embedded == nil || strings.TrimSpace(fn.Embedded.Text) == "" {
+			continue
+		}
+		diagnostics := diag.ValidateRegion(uri, fn.Embedded.Text, s.manager, first)
+		first = false
+		for _, d := range diagnostics {
+			all = append(all, mapEmbeddedDiagnostic(fn.Embedded, d))
+		}
+	}
+	if first {
+		s.manager.ClearReferencesForURI(uri)
+	}
+	return all
+}
+
+type embeddedRegionView struct {
+	region *xeto.EmbeddedAxonRegion
+	lines  []string
+}
+
+func (v embeddedRegionView) innerLine(line int) (string, bool) {
+	if line < 0 || line >= len(v.lines) {
+		return "", false
+	}
+	return v.lines[line], true
+}
+
+func (s *Server) embeddedRegionAt(uri string, pos index.Position) (embeddedRegionView, *xeto.ParsedFunction, index.Position, bool) {
+	doc, ok := s.document(uri)
+	if !ok {
+		path := pathFromURI(uri)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return embeddedRegionView{}, nil, index.Position{}, false
+		}
+		doc = string(content)
+	}
+	fn, region, ok := xeto.FindEmbeddedAxonRegion(uri, doc, pos.Line, pos.Character)
+	if !ok {
+		return embeddedRegionView{}, nil, index.Position{}, false
+	}
+	inner := index.Position{Line: pos.Line - region.StartLine, Character: pos.Character}
+	return embeddedRegionView{region: region, lines: strings.Split(region.Text, "\n")}, fn, inner, true
+}
+
+func mapEmbeddedDiagnostic(region *xeto.EmbeddedAxonRegion, diagnostic index.Diagnostic) index.Diagnostic {
+	return index.Diagnostic{
+		Range: index.Range{
+			Start: index.Position{Line: region.StartLine + diagnostic.Range.Start.Line, Character: diagnostic.Range.Start.Character},
+			End:   index.Position{Line: region.StartLine + diagnostic.Range.End.Line, Character: diagnostic.Range.End.Character},
+		},
+		Message:  diagnostic.Message,
+		Severity: diagnostic.Severity,
+	}
 }
 
 func (s *Server) lineAt(uri string, lineNumber int) (string, bool) {

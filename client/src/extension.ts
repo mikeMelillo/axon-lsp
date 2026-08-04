@@ -40,15 +40,17 @@ export function activate(context: ExtensionContext) {
         // Must match the language ID in package.json
         documentSelector: [
             { scheme: 'file', language: 'axon' },
+            { scheme: 'file', language: 'xeto' },
             { scheme: 'file', language: 'fantom' },
-            { scheme: 'file', pattern: '**/*.fan' }
+            { scheme: 'file', pattern: '**/*.fan' },
+            { scheme: 'file', pattern: '**/*.xeto' }
         ],
         initializationOptions: {
             settings: getServerSettings()
         },
         synchronize: {
             // Notify the server about file changes in the workspace
-            fileEvents: workspace.createFileSystemWatcher('**/{*.axon,*.trio,*.fan}')
+            fileEvents: workspace.createFileSystemWatcher('**/{*.axon,*.trio,*.fan,*.xeto}')
         },
         outputChannel: outputChannel,
         traceOutputChannel: window.createOutputChannel('Axon LSP Trace'),
@@ -97,12 +99,13 @@ export function activate(context: ExtensionContext) {
     );
 }
 
-function getServerSettings(): { haxallPaths: string[]; externalPaths: string[] } {
+function getServerSettings(): { haxallPaths: string[]; externalPaths: string[]; mode: string } {
     const config = workspace.getConfiguration('axonLsp');
     const workspaceRoot = workspace.workspaceFolders?.[0]?.uri.fsPath;
     return {
         haxallPaths: normalizeConfiguredPaths(config.get<string[]>('haxallPaths', []), workspaceRoot),
-        externalPaths: normalizeConfiguredPaths(config.get<string[]>('externalPaths', []), workspaceRoot)
+        externalPaths: normalizeConfiguredPaths(config.get<string[]>('externalPaths', []), workspaceRoot),
+        mode: config.get<string>('mode', 'auto')
     };
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/cache"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/fantom"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/trio"
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/xeto"
 )
 
 const (
@@ -19,6 +20,8 @@ const (
 
 type Manager struct {
 	mu                   sync.RWMutex
+	mode                 Mode
+	coreVariants         map[string][]cache.FunctionVariant
 	CoreFuncs            map[string]Symbol
 	ExternalFuncs        map[string]Symbol
 	LocalFuncs           map[string]Symbol
@@ -35,36 +38,19 @@ func NewManager() (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	coreSymbols := make(map[string]Symbol, len(core))
-	for name, fn := range core {
-		var loc *Location
-		if fn.LocationURI != "" {
-			loc = &Location{URI: fn.LocationURI, Range: Range{
-				Start: Position{Line: fn.Range.Start.Line, Character: fn.Range.Start.Character},
-				End:   Position{Line: fn.Range.End.Line, Character: fn.Range.End.Character},
-			}}
-		}
-		coreSymbols[name] = Symbol{
-			Name:       fn.Name,
-			Kind:       KindFunction,
-			Doc:        normalizedDoc(fn.Doc),
-			ArgsStr:    fn.ArgsStr,
-			Params:     fn.Params,
-			ItemKind:   fn.Kind,
-			Location:   loc,
-			Origin:     OriginCore,
-			SourceRoot: "bundled core",
-		}
-	}
-	return &Manager{
-		CoreFuncs:            coreSymbols,
+	mgr := &Manager{
+		mode:                 ModeAuto,
+		coreVariants:         core,
+		CoreFuncs:            map[string]Symbol{},
 		ExternalFuncs:        map[string]Symbol{},
 		LocalFuncs:           map[string]Symbol{},
 		ReferencesMap:        map[string][]Location{},
 		workspaceFileSymbols: map[string]map[string]Symbol{},
 		externalFileSymbols:  map[string]map[string]Symbol{},
 		documentSymbols:      map[string][]DocumentSymbol{},
-	}, nil
+	}
+	mgr.rebuildCoreFuncsLocked()
+	return mgr, nil
 }
 
 func (m *Manager) AddReference(name string, location Location) {
@@ -85,6 +71,18 @@ func (m *Manager) ClearReferencesForURI(uri string) {
 		}
 		m.ReferencesMap[name] = filtered
 	}
+}
+
+func (m *Manager) SetMode(mode Mode) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	switch mode {
+	case ModeDefs, ModeSpecs, ModeAuto:
+		m.mode = mode
+	default:
+		m.mode = ModeAuto
+	}
+	m.rebuildCoreFuncsLocked()
 }
 
 func (m *Manager) UpdateLocalIndex(workspaceRoot string) {
@@ -324,10 +322,21 @@ func sourceLabel(symbol Symbol) string {
 }
 
 func (m *Manager) rebuildLocalFuncsLocked() {
+	mode := m.effectiveLocalModeLocked()
 	local := make(map[string]Symbol)
-	for _, symbols := range m.workspaceFileSymbols {
-		for name, symbol := range symbols {
-			local[name] = symbol
+	uris := make([]string, 0, len(m.workspaceFileSymbols))
+	for uri := range m.workspaceFileSymbols {
+		uris = append(uris, uri)
+	}
+	sort.Strings(uris)
+	for _, uri := range uris {
+		for name, symbol := range m.workspaceFileSymbols[uri] {
+			if !includeLocalSymbol(symbol, mode) {
+				continue
+			}
+			if existing, ok := local[name]; !ok || localSymbolRank(symbol, mode) < localSymbolRank(existing, mode) {
+				local[name] = symbol
+			}
 		}
 	}
 	m.LocalFuncs = local
@@ -352,6 +361,18 @@ func (m *Manager) rebuildExternalFuncsLocked() {
 		}
 	}
 	m.ExternalFuncs = external
+}
+
+func (m *Manager) rebuildCoreFuncsLocked() {
+	core := make(map[string]Symbol, len(m.coreVariants))
+	for name, variants := range m.coreVariants {
+		variant, ok := resolveVariantForMode(variants, m.mode)
+		if !ok {
+			continue
+		}
+		core[name] = symbolFromVariant(variant)
+	}
+	m.CoreFuncs = core
 }
 
 func (m *Manager) mergedLocked() map[string]Symbol {
@@ -384,6 +405,9 @@ func parsePath(path, uri string) (map[string]Symbol, []DocumentSymbol) {
 	if strings.HasSuffix(path, ".fan") {
 		return fromFantom(fantom.ParseFile(path))
 	}
+	if strings.HasSuffix(path, ".xeto") {
+		return fromXeto(xeto.ParseURIContent(uri, mustReadFile(path)))
+	}
 	if strings.HasSuffix(path, ".trio") || strings.HasSuffix(path, ".axon") {
 		return fromTrio(trio.ParseFile(path))
 	}
@@ -394,6 +418,9 @@ func parseURIContent(uri, content string) (map[string]Symbol, []DocumentSymbol) 
 	path := pathFromURI(uri)
 	if strings.HasSuffix(path, ".fan") {
 		return fromFantom(fantom.ParseURIContent(uri, content))
+	}
+	if strings.HasSuffix(path, ".xeto") {
+		return fromXeto(xeto.ParseURIContent(uri, content))
 	}
 	if strings.HasSuffix(path, ".trio") || strings.HasSuffix(path, ".axon") {
 		return fromTrio(trio.ParseURIContent(uri, content))
@@ -417,7 +444,10 @@ func fromTrio(parsed map[string]trio.ParsedFunction) (map[string]Symbol, []Docum
 				Start: Position{Line: symbol.StartLine, Character: symbol.StartChar},
 				End:   Position{Line: symbol.EndLine, Character: symbol.EndChar},
 			}},
-			Origin: OriginLocal,
+			Origin:      OriginLocal,
+			SourceKind:  "workspace",
+			SourceModel: "defs",
+			SourceID:    "workspaceDefs",
 		}
 		rangeValue := Range{Start: Position{Line: symbol.StartLine, Character: symbol.StartChar}, End: Position{Line: symbol.EndLine, Character: symbol.EndChar}}
 		docSymbols = append(docSymbols, DocumentSymbol{Name: symbol.Name, Detail: symbol.ArgsStr, Kind: symbolKindFunction, Range: rangeValue, SelectionRange: rangeValue})
@@ -441,10 +471,41 @@ func fromFantom(parsed map[string]fantom.ParsedFunction) (map[string]Symbol, []D
 				Start: Position{Line: symbol.StartLine, Character: symbol.StartChar},
 				End:   Position{Line: symbol.EndLine, Character: symbol.EndChar},
 			}},
-			Origin: OriginLocal,
+			Origin:      OriginLocal,
+			SourceKind:  "workspace",
+			SourceModel: "specs",
+			SourceID:    "workspaceFantomAxon",
 		}
 		rangeValue := Range{Start: Position{Line: symbol.StartLine, Character: symbol.StartChar}, End: Position{Line: symbol.EndLine, Character: symbol.EndChar}}
 		docSymbols = append(docSymbols, DocumentSymbol{Name: symbol.Name, Detail: symbol.ArgsStr, Kind: symbolKindFunction, Range: rangeValue, SelectionRange: rangeValue})
+	}
+	sortDocumentSymbols(docSymbols)
+	return result, docSymbols
+}
+
+func fromXeto(parsed map[string]xeto.ParsedFunction) (map[string]Symbol, []DocumentSymbol) {
+	result := make(map[string]Symbol, len(parsed))
+	docSymbols := make([]DocumentSymbol, 0, len(parsed))
+	for _, symbol := range parsed {
+		result[symbol.Name] = Symbol{
+			Name:       symbol.Name,
+			Kind:       KindFunction,
+			Doc:        normalizedDoc(symbol.Doc),
+			ArgsStr:    symbol.ArgsStr,
+			Params:     symbol.Params,
+			ReturnType: symbol.ReturnType,
+			ItemKind:   3,
+			Location: &Location{URI: symbol.URI, Range: Range{
+				Start: Position{Line: symbol.StartLine, Character: symbol.StartChar},
+				End:   Position{Line: symbol.EndLine, Character: symbol.EndChar},
+			}},
+			Origin:      OriginLocal,
+			SourceKind:  "workspace",
+			SourceModel: "specs",
+			SourceID:    "workspaceXetoFunc",
+		}
+		rangeValue := Range{Start: Position{Line: symbol.StartLine, Character: symbol.StartChar}, End: Position{Line: symbol.EndLine, Character: symbol.EndChar}}
+		docSymbols = append(docSymbols, DocumentSymbol{Name: symbol.Name, Detail: detailFor(result[symbol.Name]), Kind: symbolKindFunction, Range: rangeValue, SelectionRange: rangeValue})
 	}
 	sortDocumentSymbols(docSymbols)
 	return result, docSymbols
@@ -468,6 +529,91 @@ func workspaceSymbolFor(symbol Symbol, query string) (WorkspaceSymbol, bool) {
 		return WorkspaceSymbol{}, false
 	}
 	return WorkspaceSymbol{Name: symbol.Name, Kind: symbolKindFunction, Location: *symbol.Location, Detail: detailFor(symbol)}, true
+}
+
+func symbolFromVariant(fn cache.FunctionVariant) Symbol {
+	var loc *Location
+	if fn.LocationURI != "" {
+		loc = &Location{URI: fn.LocationURI, Range: Range{
+			Start: Position{Line: fn.Range.Start.Line, Character: fn.Range.Start.Character},
+			End:   Position{Line: fn.Range.End.Line, Character: fn.Range.End.Character},
+		}}
+	}
+	return Symbol{
+		Name:          fn.Name,
+		Kind:          KindFunction,
+		Doc:           normalizedDoc(fn.Doc),
+		ArgsStr:       fn.ArgsStr,
+		Params:        fn.Params,
+		ReturnType:    strings.TrimSpace(fn.ReturnType),
+		ItemKind:      fn.Kind,
+		Location:      loc,
+		Origin:        OriginCore,
+		SourceRoot:    variantSourceLabel(fn),
+		SourceKind:    fn.SourceKind,
+		SourceModel:   fn.SourceModel,
+		SourceVersion: fn.SourceVersion,
+		SourceID:      fn.SourceID,
+	}
+}
+
+func resolveVariantForMode(variants []cache.FunctionVariant, mode Mode) (cache.FunctionVariant, bool) {
+	if len(variants) == 0 {
+		return cache.FunctionVariant{}, false
+	}
+	ordered := append([]cache.FunctionVariant(nil), variants...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return variantRank(ordered[i], mode) < variantRank(ordered[j], mode)
+	})
+	return ordered[0], true
+}
+
+func variantRank(v cache.FunctionVariant, mode Mode) int {
+	model := strings.TrimSpace(v.SourceModel)
+	id := strings.TrimSpace(v.SourceID)
+	switch mode {
+	case ModeSpecs:
+		switch {
+		case model == "specs" && id == "haxall40":
+			return 0
+		case model == "defs" && id == "coreDefs":
+			return 1
+		case model == "defs" && id == "haxall31":
+			return 2
+		default:
+			return 10
+		}
+	case ModeAuto, ModeDefs:
+		fallthrough
+	default:
+		switch {
+		case model == "defs" && id == "coreDefs":
+			return 0
+		case model == "defs" && id == "haxall31":
+			return 1
+		case model == "specs" && id == "haxall40":
+			return 2
+		default:
+			return 10
+		}
+	}
+}
+
+func variantSourceLabel(v cache.FunctionVariant) string {
+	parts := []string{}
+	if v.SourceID != "" {
+		parts = append(parts, v.SourceID)
+	}
+	if v.SourceModel != "" || v.SourceVersion != "" {
+		meta := strings.TrimSpace(strings.Join([]string{v.SourceModel, v.SourceVersion}, " "))
+		if meta != "" {
+			parts = append(parts, "("+meta+")")
+		}
+	}
+	if len(parts) == 0 {
+		return "bundled core"
+	}
+	return strings.Join(parts, " ")
 }
 
 func sortWorkspaceSymbols(symbols []WorkspaceSymbol, query string) {
@@ -554,7 +700,69 @@ func relativeDepth(root string, current string) int {
 }
 
 func isSupportedSourcePath(path string) bool {
-	return strings.HasSuffix(path, ".fan") || strings.HasSuffix(path, ".trio") || strings.HasSuffix(path, ".axon")
+	return strings.HasSuffix(path, ".fan") || strings.HasSuffix(path, ".trio") || strings.HasSuffix(path, ".axon") || strings.HasSuffix(path, ".xeto")
+}
+
+func (m *Manager) effectiveLocalModeLocked() Mode {
+	if m.mode == ModeAuto {
+		for _, symbols := range m.workspaceFileSymbols {
+			for _, symbol := range symbols {
+				if symbol.SourceID == "workspaceXetoFunc" {
+					return ModeSpecs
+				}
+			}
+		}
+		return ModeDefs
+	}
+	return m.mode
+}
+
+func includeLocalSymbol(symbol Symbol, mode Mode) bool {
+	switch mode {
+	case ModeSpecs:
+		return symbol.SourceID == "workspaceDefs" || symbol.SourceID == "workspaceXetoFunc" || symbol.SourceID == "workspaceFantomAxon"
+	case ModeDefs:
+		return symbol.SourceID == "workspaceDefs" || symbol.SourceID == "workspaceFantomAxon"
+	default:
+		return true
+	}
+}
+
+func localSymbolRank(symbol Symbol, mode Mode) int {
+	switch mode {
+	case ModeSpecs:
+		switch symbol.SourceID {
+		case "workspaceDefs":
+			return 0
+		case "workspaceXetoFunc":
+			return 1
+		case "workspaceFantomAxon":
+			return 2
+		default:
+			return 10
+		}
+	case ModeDefs:
+		switch symbol.SourceID {
+		case "workspaceDefs":
+			return 0
+		case "workspaceFantomAxon":
+			return 1
+		case "workspaceXetoFunc":
+			return 9
+		default:
+			return 10
+		}
+	default:
+		return 10
+	}
+}
+
+func mustReadFile(path string) string {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(content)
 }
 
 func rootLabel(root ScanRoot) string {
