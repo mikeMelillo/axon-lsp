@@ -71,3 +71,65 @@ func TestFindEmbeddedAxonRegion(t *testing.T) {
 		t.Fatalf("unexpected region lines: %#v", region)
 	}
 }
+
+func TestFindEmbeddedAxonRegionOnBlankLines(t *testing.T) {
+	t.Parallel()
+	content := `+Funcs {
+
+  wrapper: Func {foo: Str, bar: Number, returns: Str
+  
+    <axon:---
+        
+        
+
+        
+        
+    --->
+
+  }
+
+}`
+	_, region, ok := FindEmbeddedAxonRegion("file:///workspace/funcs.xeto", content, 5, 0)
+	if !ok || region == nil {
+		t.Fatal("expected blank line inside embedded axon region to be detected")
+	}
+	if region.StartLine != 5 || region.EndLine != 9 {
+		t.Fatalf("unexpected region range for blank-line body: %#v", region)
+	}
+	_, _, ok = FindEmbeddedAxonRegion("file:///workspace/funcs.xeto", content, 9, 4)
+	if !ok {
+		t.Fatal("expected last blank line in embedded region to be detected")
+	}
+}
+
+func TestFindEmbeddedAxonRegionMatchesRealFixtureLayout(t *testing.T) {
+	t.Parallel()
+	content := `+Funcs {
+
+  mikeConcat: Func { a: Str, b: Str, returns: Str 
+  
+    <axon:---
+        
+        a + b
+        
+    --->
+  }
+
+  wrapper: Func {foo: Str, bar: Number, returns: Str
+  
+    <axon:---
+        
+    --->
+
+  }
+
+}`
+	_, _, ok := FindEmbeddedAxonRegion("file:///workspace/funcs.xeto", content, 6, 8)
+	if !ok {
+		t.Fatal("expected region for expression line in mikeConcat body")
+	}
+	_, _, ok = FindEmbeddedAxonRegion("file:///workspace/funcs.xeto", content, 14, 0)
+	if !ok {
+		t.Fatal("expected region for blank line in wrapper body")
+	}
+}

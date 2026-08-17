@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,6 +20,8 @@ import (
 )
 
 const Version = "0.2.0"
+
+var serverLog = log.New(os.Stderr, "[axon-lsp] ", log.LstdFlags)
 
 type Server struct {
 	reader      *bufio.Reader
@@ -160,8 +163,11 @@ func (s *Server) handle(msg requestMessage) error {
 			return err
 		}
 		if strings.HasSuffix(pathFromURI(params.TextDocument.URI), ".xeto") {
-			if _, _, _, ok := s.embeddedRegionAt(params.TextDocument.URI, params.Position); !ok {
+			if region, fn, inner, ok := s.embeddedRegionAt(params.TextDocument.URI, params.Position); !ok {
+				serverLog.Printf("completion xeto miss uri=%s pos=%d:%d", params.TextDocument.URI, params.Position.Line, params.Position.Character)
 				return s.writeResponse(msg.ID, index.CompletionList{IsIncomplete: false, Items: []index.CompletionItem{}}, nil)
+			} else {
+				serverLog.Printf("completion xeto hit uri=%s pos=%d:%d fn=%s region=%d:%d inner=%d:%d", params.TextDocument.URI, params.Position.Line, params.Position.Character, embeddedFuncName(fn), region.region.StartLine, region.region.EndLine, inner.Line, inner.Character)
 			}
 		}
 		return s.writeResponse(msg.ID, s.manager.GetCompletions(), nil)
@@ -278,10 +284,14 @@ func (s *Server) handleDefinition(msg requestMessage) error {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
 	if regionResult, handled, err := s.handleEmbeddedDefinition(params.TextDocument.URI, params.Position, msg.ID); handled {
+		serverLog.Printf("definition xeto dispatch uri=%s pos=%d:%d handled=%t", params.TextDocument.URI, params.Position.Line, params.Position.Character, true)
 		if err != nil {
 			return err
 		}
 		return s.writeResponse(msg.ID, regionResult, nil)
+	}
+	if strings.HasSuffix(pathFromURI(params.TextDocument.URI), ".xeto") {
+		serverLog.Printf("definition xeto miss uri=%s pos=%d:%d", params.TextDocument.URI, params.Position.Line, params.Position.Character)
 	}
 	if strings.HasSuffix(pathFromURI(params.TextDocument.URI), ".xeto") {
 		return s.writeResponse(msg.ID, nil, nil)
@@ -306,10 +316,14 @@ func (s *Server) handleHover(msg requestMessage) error {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
 	if hover, handled, err := s.handleEmbeddedHover(params.TextDocument.URI, params.Position); handled {
+		serverLog.Printf("hover xeto dispatch uri=%s pos=%d:%d handled=%t", params.TextDocument.URI, params.Position.Line, params.Position.Character, true)
 		if err != nil {
 			return err
 		}
 		return s.writeResponse(msg.ID, hover, nil)
+	}
+	if strings.HasSuffix(pathFromURI(params.TextDocument.URI), ".xeto") {
+		serverLog.Printf("hover xeto miss uri=%s pos=%d:%d", params.TextDocument.URI, params.Position.Line, params.Position.Character)
 	}
 	if strings.HasSuffix(pathFromURI(params.TextDocument.URI), ".xeto") {
 		return s.writeResponse(msg.ID, nil, nil)
@@ -340,10 +354,14 @@ func (s *Server) handleSignatureHelp(msg requestMessage) error {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
 	if help, handled, err := s.handleEmbeddedSignatureHelp(params.TextDocument.URI, params.Position); handled {
+		serverLog.Printf("signatureHelp xeto dispatch uri=%s pos=%d:%d handled=%t", params.TextDocument.URI, params.Position.Line, params.Position.Character, true)
 		if err != nil {
 			return err
 		}
 		return s.writeResponse(msg.ID, help, nil)
+	}
+	if strings.HasSuffix(pathFromURI(params.TextDocument.URI), ".xeto") {
+		serverLog.Printf("signatureHelp xeto miss uri=%s pos=%d:%d", params.TextDocument.URI, params.Position.Line, params.Position.Character)
 	}
 	if strings.HasSuffix(pathFromURI(params.TextDocument.URI), ".xeto") {
 		return s.writeResponse(msg.ID, nil, nil)
@@ -454,14 +472,17 @@ func (s *Server) handleEmbeddedSignatureHelp(uri string, pos index.Position) (*i
 func (s *Server) validateEmbeddedAxon(uri, doc string) []index.Diagnostic {
 	parsed := xeto.ParseURIContent(uri, doc)
 	if len(parsed) == 0 {
+		serverLog.Printf("diagnostics xeto no funcs uri=%s", uri)
 		return nil
 	}
 	all := []index.Diagnostic{}
 	first := true
 	for _, fn := range parsed {
 		if fn.Embedded == nil || strings.TrimSpace(fn.Embedded.Text) == "" {
+			serverLog.Printf("diagnostics xeto skip fn=%s uri=%s embedded=%t empty=%t", fn.Name, uri, fn.Embedded != nil, fn.Embedded == nil || strings.TrimSpace(fn.Embedded.Text) == "")
 			continue
 		}
+		serverLog.Printf("diagnostics xeto validate fn=%s uri=%s region=%d:%d", fn.Name, uri, fn.Embedded.StartLine, fn.Embedded.EndLine)
 		diagnostics := diag.ValidateRegion(uri, fn.Embedded.Text, s.manager, first)
 		first = false
 		for _, d := range diagnostics {
@@ -498,9 +519,11 @@ func (s *Server) embeddedRegionAt(uri string, pos index.Position) (embeddedRegio
 	}
 	fn, region, ok := xeto.FindEmbeddedAxonRegion(uri, doc, pos.Line, pos.Character)
 	if !ok {
+		serverLog.Printf("embeddedRegionAt miss uri=%s pos=%d:%d", uri, pos.Line, pos.Character)
 		return embeddedRegionView{}, nil, index.Position{}, false
 	}
 	inner := index.Position{Line: pos.Line - region.StartLine, Character: pos.Character}
+	serverLog.Printf("embeddedRegionAt hit uri=%s pos=%d:%d fn=%s region=%d:%d inner=%d:%d", uri, pos.Line, pos.Character, embeddedFuncName(fn), region.StartLine, region.EndLine, inner.Line, inner.Character)
 	return embeddedRegionView{region: region, lines: strings.Split(region.Text, "\n")}, fn, inner, true
 }
 
@@ -513,6 +536,13 @@ func mapEmbeddedDiagnostic(region *xeto.EmbeddedAxonRegion, diagnostic index.Dia
 		Message:  diagnostic.Message,
 		Severity: diagnostic.Severity,
 	}
+}
+
+func embeddedFuncName(fn *xeto.ParsedFunction) string {
+	if fn == nil {
+		return "<unknown>"
+	}
+	return fn.Name
 }
 
 func (s *Server) lineAt(uri string, lineNumber int) (string, bool) {

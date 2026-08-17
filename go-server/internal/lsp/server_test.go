@@ -145,3 +145,78 @@ func TestEmbeddedXetoDiagnosticsMapToOuterDocument(t *testing.T) {
 		t.Fatalf("expected diagnostic line to map to outer xeto document, got %q", out)
 	}
 }
+
+func TestEmbeddedXetoCompletionOnBlankLine(t *testing.T) {
+	t.Parallel()
+	server := NewServer(bytes.NewReader(nil), &bytes.Buffer{})
+	manager, err := index.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.SetMode(index.ModeSpecs)
+	server.manager = manager
+	uri := "file:///workspace/funcs.xeto"
+	doc := `+Funcs {
+  helper: Func { returns: Number }
+
+  wrapper: Func {foo: Str, bar: Number, returns: Str
+    <axon:---
+        
+    --->
+  }
+}`
+	server.setDocument(uri, doc)
+	manager.UpdateDocument(uri, doc)
+	params, _ := json.Marshal(completionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: index.Position{Line: 5, Character: 2}})
+	if err := server.handle(requestMessage{ID: json.RawMessage("1"), Method: "textDocument/completion", Params: params}); err != nil {
+		t.Fatal(err)
+	}
+	out := server.writer.(*bytes.Buffer).String()
+	if !strings.Contains(out, "helper") {
+		t.Fatalf("expected completion results inside blank embedded xeto line, got %q", out)
+	}
+}
+
+func TestEmbeddedXetoCompletionOnRealFixtureShape(t *testing.T) {
+	t.Parallel()
+	server := NewServer(bytes.NewReader(nil), &bytes.Buffer{})
+	manager, err := index.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.SetMode(index.ModeSpecs)
+	server.manager = manager
+	uri := "file:///workspace/funcs.xeto"
+	doc := `+Funcs {
+
+  mikeConcat: Func { a: Str, b: Str, returns: Str 
+  
+    <axon:---
+        
+        a + b
+        
+    --->
+  }
+
+  helper: Func { returns: Number }
+
+  wrapper: Func {foo: Str, bar: Number, returns: Str
+  
+    <axon:---
+        
+    --->
+
+  }
+
+}`
+	server.setDocument(uri, doc)
+	manager.UpdateDocument(uri, doc)
+	params, _ := json.Marshal(completionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: index.Position{Line: 16, Character: 0}})
+	if err := server.handle(requestMessage{ID: json.RawMessage("1"), Method: "textDocument/completion", Params: params}); err != nil {
+		t.Fatal(err)
+	}
+	out := server.writer.(*bytes.Buffer).String()
+	if !strings.Contains(out, "mikeConcat") || !strings.Contains(out, "helper") {
+		t.Fatalf("expected completion results in real fixture-shaped blank embedded line, got %q", out)
+	}
+}

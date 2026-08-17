@@ -1,0 +1,24 @@
+pragma: Lib <
+  doc: "TestTest"
+  version: "1.0.0"
+  depends: {
+    { lib:"sys",     versions: "5.0.0" }
+    { lib: "ph", versions: "5.0.0" }
+    { lib:"axon",    versions: "4.0.6" }
+    { lib:"hx",      versions: "4.0.6" }
+    /*{ lib:"hx.conn", versions: "1.0+" }*/
+  }
+  categories: {"haxall"}
+  license: "AFL-3.0"
+  org: {
+    dis: "Albireo Energy"
+    uri: ""
+  }
+  vcs: {
+    type: "git"
+    uri: ""
+  }
+  libExt: OtherLibExt
+>
+
+OtherLibExt: Ext

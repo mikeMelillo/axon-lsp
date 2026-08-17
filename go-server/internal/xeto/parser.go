@@ -113,7 +113,30 @@ func FindEmbeddedAxonRegion(uri, content string, line, character int) (*ParsedFu
 		fnCopy := fn
 		return &fnCopy, region, true
 	}
+	if region, ok := fallbackEmbeddedRegion(content, line); ok {
+		return nil, region, true
+	}
 	return nil, nil, false
+}
+
+func fallbackEmbeddedRegion(content string, targetLine int) (*EmbeddedAxonRegion, bool) {
+	lines := strings.Split(content, "\n")
+	start := -1
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, "<axon:---") {
+			start = i + 1
+			continue
+		}
+		if start >= 0 && strings.Contains(trimmed, "--->") {
+			end := i - 1
+			if targetLine >= start && targetLine <= end {
+				return &EmbeddedAxonRegion{Text: strings.Join(lines[start:i], "\n"), StartLine: start, EndLine: end}, true
+			}
+			start = -1
+		}
+	}
+	return nil, false
 }
 
 func captureFuncBlock(lines []string, start int) (string, int, int) {
