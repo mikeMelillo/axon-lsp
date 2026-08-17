@@ -35,3 +35,23 @@ static Dict myTestFantomFunction(Dict arg1, Dict arg2) {
 		t.Fatalf("unexpected start location: %d:%d", fn.StartLine, fn.StartChar)
 	}
 }
+
+func TestCommentsDoNotCreateFantomAxonFunctions(t *testing.T) {
+	t.Parallel()
+	source := `// @Axon
+// static Dict lineCommented() {}
+/*
+@Axon
+static Dict blockCommented() {}
+*/
+@Axon
+static Dict actualAxonFunc() {}
+`
+	result := ParseURIContent("file:///comments.fan", source)
+	if len(result) != 1 {
+		t.Fatalf("expected one live Axon function, got %#v", result)
+	}
+	if _, ok := result["actualAxonFunc"]; !ok {
+		t.Fatal("expected actualAxonFunc")
+	}
+}

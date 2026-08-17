@@ -55,6 +55,8 @@ function activate(context) {
         return;
     }
     outputChannel.appendLine(`Using server binary: ${serverBinary}`);
+    let settings = getServerSettings();
+    logWorkspaceIndexWarning(outputChannel, settings.indexAllWorkspaceFolders);
     // 3. Server options: how to launch the Go process
     const serverOptions = {
         command: serverBinary,
@@ -73,7 +75,7 @@ function activate(context) {
             { scheme: 'file', pattern: '**/*.xeto' }
         ],
         initializationOptions: {
-            settings: getServerSettings()
+            settings
         },
         synchronize: {
             // Notify the server about file changes in the workspace
@@ -97,16 +99,31 @@ function activate(context) {
     // 5. Create and start the client
     client = new node_1.LanguageClient('axonLspClient', 'Axon Language Server', serverOptions, clientOptions);
     outputChannel.appendLine('Starting Language Client...');
-    client.start().catch(err => {
+    const clientReady = client.start();
+    context.subscriptions.push(vscode_1.workspace.registerTextDocumentContentProvider('axon-ext', {
+        provideTextDocumentContent: async (uri) => {
+            await clientReady;
+            return client.sendRequest('axonLsp/embeddedDocument', { uri: uri.toString() });
+        }
+    }));
+    clientReady.catch(err => {
         outputChannel.appendLine(`Failed to start client: ${err}`);
     });
     context.subscriptions.push(vscode_1.workspace.onDidChangeConfiguration(event => {
         if (!event.affectsConfiguration('axonLsp')) {
             return;
         }
+        const previousSettings = settings;
+        settings = getServerSettings();
+        if (!previousSettings.indexAllWorkspaceFolders && settings.indexAllWorkspaceFolders) {
+            logWorkspaceIndexWarning(outputChannel, true);
+        }
         void client.sendNotification('workspace/didChangeConfiguration', {
-            settings: getServerSettings()
+            settings
         });
+    }));
+    context.subscriptions.push(vscode_1.workspace.onDidChangeWorkspaceFolders(() => {
+        logWorkspaceIndexWarning(outputChannel, settings.indexAllWorkspaceFolders);
     }));
     // 6. Register command to open external URLs in browser
     context.subscriptions.push(vscode_1.commands.registerCommand('extension.openExternal', (url) => {
@@ -120,8 +137,15 @@ function getServerSettings() {
     return {
         haxallPaths: normalizeConfiguredPaths(config.get('haxallPaths', []), workspaceRoot),
         externalPaths: normalizeConfiguredPaths(config.get('externalPaths', []), workspaceRoot),
+        indexAllWorkspaceFolders: config.get('indexAllWorkspaceFolders', false),
         mode: config.get('mode', 'auto')
     };
+}
+function logWorkspaceIndexWarning(outputChannel, enabled) {
+    const count = vscode_1.workspace.workspaceFolders?.length ?? 0;
+    if (enabled && count > 1) {
+        outputChannel.appendLine(`Warning: indexing all ${count} workspace folders as local Axon sources; this may increase startup time and memory usage.`);
+    }
 }
 function normalizeConfiguredPaths(paths, workspaceRoot) {
     return paths

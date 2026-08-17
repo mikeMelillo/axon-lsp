@@ -7,14 +7,17 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/cache"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/diag"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/index"
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/lexer"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/resolver"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/xeto"
 )
@@ -24,15 +27,16 @@ const Version = "0.2.0"
 var serverLog = log.New(os.Stderr, "[axon-lsp] ", log.LstdFlags)
 
 type Server struct {
-	reader      *bufio.Reader
-	writer      io.Writer
-	writeMu     sync.Mutex
-	documentsMu sync.RWMutex
-	documents   map[string]string
-	rootPath    string
-	manager     *index.Manager
-	settings    settingsPayload
-	shutdown    bool
+	reader           *bufio.Reader
+	writer           io.Writer
+	writeMu          sync.Mutex
+	documentsMu      sync.RWMutex
+	documents        map[string]string
+	rootPath         string
+	workspaceFolders []workspaceFolder
+	manager          *index.Manager
+	settings         settingsPayload
+	shutdown         bool
 }
 
 func NewServer(r io.Reader, w io.Writer) *Server {
@@ -74,6 +78,7 @@ func (s *Server) handle(msg requestMessage) error {
 		var params initializeParams
 		_ = json.Unmarshal(msg.Params, &params)
 		s.rootPath = pathFromInitialize(params)
+		s.workspaceFolders = append([]workspaceFolder(nil), params.WorkspaceFolders...)
 		manager, err := index.NewManager()
 		if err != nil {
 			return err
@@ -94,13 +99,16 @@ func (s *Server) handle(msg requestMessage) error {
 				DocumentSymbolProvider:  true,
 				WorkspaceSymbolProvider: true,
 				CodeActionProvider:      true,
+				Workspace: workspaceCapabilities{WorkspaceFolders: workspaceFolderCapabilities{
+					Supported:           true,
+					ChangeNotifications: true,
+				}},
 			},
 			ServerInfo: serverInfo{Name: "axon-lsp-go", Version: Version},
 		}, nil)
 	case "initialized":
-		if s.manager != nil && s.rootPath != "" {
-			s.manager.UpdateLocalIndex(s.rootPath)
-			s.manager.SetExtraRoots(scanRootsFromSettings(s.settings))
+		if s.manager != nil {
+			s.refreshWorkspaceIndexes()
 		}
 		return nil
 	case "workspace/didChangeConfiguration":
@@ -108,12 +116,44 @@ func (s *Server) handle(msg requestMessage) error {
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
 			return err
 		}
+		indexAllChanged := s.settings.IndexAllWorkspaceFolders != params.Settings.IndexAllWorkspaceFolders
 		s.settings = params.Settings
 		if s.manager != nil {
 			s.manager.SetMode(parseModeSetting(params.Settings.Mode))
-			s.manager.SetExtraRoots(scanRootsFromSettings(params.Settings))
+			if indexAllChanged {
+				s.refreshWorkspaceIndexes()
+			} else {
+				s.manager.SetExtraRoots(scanRootsFromSettings(params.Settings))
+				s.reapplyOpenDocuments()
+			}
 		}
 		return nil
+	case "workspace/didChangeWorkspaceFolders":
+		var params didChangeWorkspaceFoldersParams
+		if err := json.Unmarshal(msg.Params, &params); err != nil {
+			return err
+		}
+		s.updateWorkspaceFolders(params.Event)
+		if s.manager != nil {
+			s.refreshWorkspaceIndexes()
+		}
+		return nil
+	case "workspace/didChangeWatchedFiles":
+		var params didChangeWatchedFilesParams
+		if err := json.Unmarshal(msg.Params, &params); err != nil {
+			return err
+		}
+		s.updateWatchedFiles(params.Changes)
+		return nil
+	case "axonLsp/embeddedDocument":
+		var params embeddedDocumentParams
+		if err := json.Unmarshal(msg.Params, &params); err != nil {
+			return err
+		}
+		if params.URI != cache.EmbeddedCoreURI {
+			return s.writeResponse(msg.ID, nil, &responseError{Code: -32602, Message: "unknown embedded document"})
+		}
+		return s.writeResponse(msg.ID, string(cache.EmbeddedCoreFuncs), nil)
 	case "shutdown":
 		s.shutdown = true
 		return s.writeResponse(msg.ID, map[string]any{}, nil)
@@ -141,6 +181,23 @@ func (s *Server) handle(msg requestMessage) error {
 			}
 		}
 		return s.publishDiagnostics(params.TextDocument.URI)
+	case "textDocument/didClose":
+		var params didSaveParams
+		if err := json.Unmarshal(msg.Params, &params); err != nil {
+			return err
+		}
+		s.documentsMu.Lock()
+		delete(s.documents, params.TextDocument.URI)
+		s.documentsMu.Unlock()
+		if s.manager != nil {
+			path := pathFromURI(params.TextDocument.URI)
+			if content, err := os.ReadFile(path); err == nil {
+				s.manager.UpdateDocument(params.TextDocument.URI, string(content))
+			} else {
+				s.manager.RemoveDocument(params.TextDocument.URI)
+			}
+		}
+		return nil
 	case "textDocument/didSave":
 		var params didSaveParams
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
@@ -161,6 +218,9 @@ func (s *Server) handle(msg requestMessage) error {
 		var params completionParams
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
 			return err
+		}
+		if masked, ok := s.maskedSource(params.TextDocument.URI); ok && masked.IsComment(params.Position.Line, params.Position.Character) {
+			return s.writeResponse(msg.ID, index.CompletionList{IsIncomplete: false, Items: []index.CompletionItem{}}, nil)
 		}
 		if strings.HasSuffix(pathFromURI(params.TextDocument.URI), ".xeto") {
 			if region, fn, inner, ok := s.embeddedRegionAt(params.TextDocument.URI, params.Position); !ok {
@@ -202,7 +262,8 @@ func (s *Server) handleCodeAction(msg requestMessage) error {
 	if !ok {
 		return s.writeResponse(msg.ID, []codeAction{}, nil)
 	}
-	if strings.Contains(line, "//lspignore") {
+	masked, ok := s.maskedSource(params.TextDocument.URI)
+	if !ok || masked.IsComment(params.Range.Start.Line, params.Range.Start.Character) || masked.LineCommentContains(params.Range.Start.Line, "//lspignore") {
 		return s.writeResponse(msg.ID, []codeAction{}, nil)
 	}
 	for _, diagnostic := range params.Context.Diagnostics {
@@ -236,6 +297,111 @@ func scanRootsFromSettings(settings settingsPayload) []index.ScanRoot {
 		roots = append(roots, index.ScanRoot{Path: path, Kind: index.ScanRootExternal})
 	}
 	return roots
+}
+
+func (s *Server) selectedWorkspaceRoots() []index.ScanRoot {
+	folders := s.workspaceFolders
+	if len(folders) == 0 {
+		if s.rootPath == "" {
+			return nil
+		}
+		return []index.ScanRoot{{Path: s.rootPath, Kind: index.ScanRootWorkspace, Label: "workspace"}}
+	}
+	if !s.settings.IndexAllWorkspaceFolders {
+		folders = folders[:1]
+	}
+	roots := make([]index.ScanRoot, 0, len(folders))
+	for _, folder := range folders {
+		path := pathFromURI(folder.URI)
+		if path != "" {
+			roots = append(roots, index.ScanRoot{Path: path, Kind: index.ScanRootWorkspace, Label: "workspace"})
+		}
+	}
+	return roots
+}
+
+func (s *Server) refreshWorkspaceIndexes() {
+	s.manager.SetWorkspaceRoots(s.selectedWorkspaceRoots())
+	s.manager.SetExtraRoots(scanRootsFromSettings(s.settings))
+	s.reapplyOpenDocuments()
+}
+
+func (s *Server) reapplyOpenDocuments() {
+	s.documentsMu.RLock()
+	documents := make(map[string]string, len(s.documents))
+	for uri, content := range s.documents {
+		documents[uri] = content
+	}
+	s.documentsMu.RUnlock()
+	for uri, content := range documents {
+		s.manager.UpdateDocument(uri, content)
+	}
+}
+
+func (s *Server) updateWorkspaceFolders(event workspaceFoldersChangeEvent) {
+	removed := make(map[string]struct{}, len(event.Removed))
+	for _, folder := range event.Removed {
+		removed[folder.URI] = struct{}{}
+	}
+	folders := make([]workspaceFolder, 0, len(s.workspaceFolders)+len(event.Added))
+	seen := make(map[string]struct{}, cap(folders))
+	for _, folder := range s.workspaceFolders {
+		if _, ok := removed[folder.URI]; ok {
+			continue
+		}
+		folders = append(folders, folder)
+		seen[folder.URI] = struct{}{}
+	}
+	for _, folder := range event.Added {
+		if _, ok := seen[folder.URI]; ok {
+			continue
+		}
+		folders = append(folders, folder)
+		seen[folder.URI] = struct{}{}
+	}
+	s.workspaceFolders = folders
+}
+
+func (s *Server) updateWatchedFiles(changes []fileEvent) {
+	if s.manager == nil {
+		return
+	}
+	for _, change := range changes {
+		path := pathFromURI(change.URI)
+		if !isSupportedWatchedPath(path) || !s.isSelectedWorkspacePath(path) {
+			continue
+		}
+		if change.Type == 3 {
+			s.manager.RemoveDocument(change.URI)
+			continue
+		}
+		if content, ok := s.document(change.URI); ok {
+			s.manager.UpdateDocument(change.URI, content)
+			continue
+		}
+		if content, err := os.ReadFile(path); err == nil {
+			s.manager.UpdateDocument(change.URI, string(content))
+		}
+	}
+}
+
+func (s *Server) isSelectedWorkspacePath(path string) bool {
+	for _, root := range s.selectedWorkspaceRoots() {
+		rel, err := filepath.Rel(root.Path, path)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isSupportedWatchedPath(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".axon", ".trio", ".fan", ".xeto":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseModeSetting(value string) index.Mode {
@@ -279,8 +445,8 @@ func (s *Server) handleDefinition(msg requestMessage) error {
 	if err := json.Unmarshal(msg.Params, &params); err != nil {
 		return err
 	}
-	line, ok := s.lineAt(params.TextDocument.URI, params.Position.Line)
-	if !ok {
+	line, inComment, ok := s.maskedLineAt(params.TextDocument.URI, params.Position)
+	if !ok || inComment {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
 	if regionResult, handled, err := s.handleEmbeddedDefinition(params.TextDocument.URI, params.Position, msg.ID); handled {
@@ -311,8 +477,8 @@ func (s *Server) handleHover(msg requestMessage) error {
 	if err := json.Unmarshal(msg.Params, &params); err != nil {
 		return err
 	}
-	line, ok := s.lineAt(params.TextDocument.URI, params.Position.Line)
-	if !ok {
+	line, inComment, ok := s.maskedLineAt(params.TextDocument.URI, params.Position)
+	if !ok || inComment {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
 	if hover, handled, err := s.handleEmbeddedHover(params.TextDocument.URI, params.Position); handled {
@@ -349,8 +515,8 @@ func (s *Server) handleSignatureHelp(msg requestMessage) error {
 	if err := json.Unmarshal(msg.Params, &params); err != nil {
 		return err
 	}
-	line, ok := s.lineAt(params.TextDocument.URI, params.Position.Line)
-	if !ok {
+	line, inComment, ok := s.maskedLineAt(params.TextDocument.URI, params.Position)
+	if !ok || inComment {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
 	if help, handled, err := s.handleEmbeddedSignatureHelp(params.TextDocument.URI, params.Position); handled {
@@ -384,8 +550,8 @@ func (s *Server) handleReferences(msg requestMessage) error {
 	if err := json.Unmarshal(msg.Params, &params); err != nil {
 		return err
 	}
-	line, ok := s.lineAt(params.TextDocument.URI, params.Position.Line)
-	if !ok {
+	line, inComment, ok := s.maskedLineAt(params.TextDocument.URI, params.Position)
+	if !ok || inComment {
 		return s.writeResponse(msg.ID, []index.Location{}, nil)
 	}
 	match, ok := resolver.WordAt(line, params.Position.Character)
@@ -524,7 +690,8 @@ func (s *Server) embeddedRegionAt(uri string, pos index.Position) (embeddedRegio
 	}
 	inner := index.Position{Line: pos.Line - region.StartLine, Character: pos.Character}
 	serverLog.Printf("embeddedRegionAt hit uri=%s pos=%d:%d fn=%s region=%d:%d inner=%d:%d", uri, pos.Line, pos.Character, embeddedFuncName(fn), region.StartLine, region.EndLine, inner.Line, inner.Character)
-	return embeddedRegionView{region: region, lines: strings.Split(region.Text, "\n")}, fn, inner, true
+	masked := lexer.MaskComments(region.Text)
+	return embeddedRegionView{region: region, lines: strings.Split(masked.Text, "\n")}, fn, inner, true
 }
 
 func mapEmbeddedDiagnostic(region *xeto.EmbeddedAxonRegion, diagnostic index.Diagnostic) index.Diagnostic {
@@ -546,20 +713,46 @@ func embeddedFuncName(fn *xeto.ParsedFunction) string {
 }
 
 func (s *Server) lineAt(uri string, lineNumber int) (string, bool) {
-	doc, ok := s.document(uri)
+	doc, ok := s.documentSource(uri)
 	if !ok {
-		path := pathFromURI(uri)
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return "", false
-		}
-		doc = string(content)
+		return "", false
 	}
 	lines := strings.Split(doc, "\n")
 	if lineNumber < 0 || lineNumber >= len(lines) {
 		return "", false
 	}
 	return lines[lineNumber], true
+}
+
+func (s *Server) maskedLineAt(uri string, position index.Position) (string, bool, bool) {
+	masked, ok := s.maskedSource(uri)
+	if !ok {
+		return "", false, false
+	}
+	lines := strings.Split(masked.Text, "\n")
+	if position.Line < 0 || position.Line >= len(lines) {
+		return "", false, false
+	}
+	return lines[position.Line], masked.IsComment(position.Line, position.Character), true
+}
+
+func (s *Server) maskedSource(uri string) (lexer.MaskedSource, bool) {
+	doc, ok := s.documentSource(uri)
+	if !ok {
+		return lexer.MaskedSource{}, false
+	}
+	return lexer.MaskComments(doc), true
+}
+
+func (s *Server) documentSource(uri string) (string, bool) {
+	if doc, ok := s.document(uri); ok {
+		return doc, true
+	}
+	content, err := os.ReadFile(pathFromURI(uri))
+	if err != nil {
+		return "", false
+	}
+	return string(content), true
 }
 
 func (s *Server) setDocument(uri, content string) {
@@ -646,6 +839,17 @@ func pathFromURI(uri string) string {
 		return ""
 	}
 	if strings.HasPrefix(uri, "file://") {
+		parsed, err := url.Parse(uri)
+		if err == nil {
+			trimmed := parsed.Path
+			if parsed.Host != "" && parsed.Host != "localhost" {
+				trimmed = "//" + parsed.Host + trimmed
+			}
+			if len(trimmed) >= 3 && trimmed[0] == '/' && trimmed[2] == ':' {
+				return filepath.FromSlash(trimmed[1:])
+			}
+			return filepath.FromSlash(trimmed)
+		}
 		trimmed := strings.TrimPrefix(uri, "file://")
 		if len(trimmed) >= 3 && trimmed[0] == '/' && trimmed[2] == ':' {
 			return filepath.FromSlash(trimmed[1:])

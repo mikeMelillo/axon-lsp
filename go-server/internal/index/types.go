@@ -58,8 +58,9 @@ const (
 type ScanRootKind string
 
 const (
-	ScanRootHaxall   ScanRootKind = "haxall"
-	ScanRootExternal ScanRootKind = "external"
+	ScanRootWorkspace ScanRootKind = "workspace"
+	ScanRootHaxall    ScanRootKind = "haxall"
+	ScanRootExternal  ScanRootKind = "external"
 )
 
 type ScanRoot struct {

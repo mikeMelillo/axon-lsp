@@ -20,7 +20,6 @@ type sourceDescriptor struct {
 	Version      string
 	Root         string
 	GitHubBase   string
-	LocalPrefix  string
 	CoreTrioFile string
 }
 
@@ -67,6 +66,8 @@ func main() {
 	coreSource := filepath.Join(repoRoot, "cache_sources", "coreFuncs.trio")
 	assetJSON := filepath.Join(repoRoot, "go-server", "internal", "cache", "assets", "function_cache.json")
 	assetCore := filepath.Join(repoRoot, "go-server", "internal", "cache", "assets", "coreFuncs.trio")
+	haxall31Root := filepath.Join(repoRoot, "cache_sources", "haxall-3.1.12")
+	haxall40Root := filepath.Join(repoRoot, "cache_sources", "haxall-4.0.5")
 
 	sources := []sourceDescriptor{
 		{
@@ -78,22 +79,20 @@ func main() {
 			CoreTrioFile: coreSource,
 		},
 		{
-			ID:          "haxall31",
-			Kind:        "haxall",
-			Model:       "defs",
-			Version:     "3.1.12",
-			Root:        filepath.Join(repoRoot, "cache_sources", "haxall-3.1.12"),
-			GitHubBase:  strings.TrimSpace(os.Getenv("GITHUB_BASE_3")),
-			LocalPrefix: strings.TrimSpace(os.Getenv("LOCAL_PREFIX_3")),
+			ID:         "haxall31",
+			Kind:       "haxall",
+			Model:      "defs",
+			Version:    "3.1.12",
+			Root:       haxall31Root,
+			GitHubBase: envOrDefault("GITHUB_BASE_3", "https://github.com/haxall/haxall/blob/ec4ab0bae96ed840d0888be2164fe672cdee8781"),
 		},
 		{
-			ID:          "haxall40",
-			Kind:        "haxall",
-			Model:       "specs",
-			Version:     "4.0.5",
-			Root:        filepath.Join(repoRoot, "cache_sources", "haxall-4.0.5"),
-			GitHubBase:  strings.TrimSpace(os.Getenv("GITHUB_BASE_4")),
-			LocalPrefix: strings.TrimSpace(os.Getenv("LOCAL_PREFIX_4")),
+			ID:         "haxall40",
+			Kind:       "haxall",
+			Model:      "specs",
+			Version:    "4.0.5",
+			Root:       haxall40Root,
+			GitHubBase: envOrDefault("GITHUB_BASE_4", "https://github.com/haxall/haxall/blob/8bcaee9a74e14d7bd594eb0c923767ea3b804862"),
 		},
 	}
 
@@ -191,7 +190,7 @@ func serializeTrio(fn trio.ParsedFunction, source sourceDescriptor) serializedVa
 		SourceModel:   source.Model,
 		SourceVersion: source.Version,
 		SourceID:      source.ID,
-		SourceRoot:    source.Root,
+		SourceRoot:    source.ID,
 	}
 }
 
@@ -207,7 +206,7 @@ func serializeFantom(fn fantom.ParsedFunction, source sourceDescriptor) serializ
 		SourceModel:   source.Model,
 		SourceVersion: source.Version,
 		SourceID:      source.ID,
-		SourceRoot:    source.Root,
+		SourceRoot:    source.ID,
 	}
 }
 
@@ -224,23 +223,34 @@ func serializeLocationWithRange(uri string, startLine, startChar, endLine, endCh
 			End:   position{Line: endLine, Character: endChar},
 		}}
 	}
-	if source.GitHubBase != "" && source.LocalPrefix != "" {
-		prefix := "file://" + filepath.ToSlash(strings.TrimRight(source.LocalPrefix, "/"))
-		if strings.HasPrefix(uri, prefix) {
-			return &location{URI: strings.TrimRight(source.GitHubBase, "/") + "/" + strings.TrimPrefix(uri, prefix+"/"), Range: &struct {
-				Start position `json:"start"`
-				End   position `json:"end"`
-			}{
-				Start: position{Line: startLine, Character: startChar},
-				End:   position{Line: endLine, Character: endChar},
-			}}
+	if source.GitHubBase != "" {
+		path := pathFromFileURI(uri)
+		rel, err := filepath.Rel(source.Root, path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			panic(fmt.Sprintf("source URI %q is outside cache root %q", uri, source.Root))
 		}
+		return &location{URI: strings.TrimRight(source.GitHubBase, "/") + "/" + filepath.ToSlash(rel), Range: &struct {
+			Start position `json:"start"`
+			End   position `json:"end"`
+		}{
+			Start: position{Line: startLine, Character: startChar},
+			End:   position{Line: endLine, Character: endChar},
+		}}
 	}
-	return &location{URI: uri, Range: &struct {
-		Start position `json:"start"`
-		End   position `json:"end"`
-	}{
-		Start: position{Line: startLine, Character: startChar},
-		End:   position{Line: endLine, Character: endChar},
-	}}
+	return nil
+}
+
+func envOrDefault(name, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func pathFromFileURI(uri string) string {
+	path := strings.TrimPrefix(uri, "file://")
+	if len(path) >= 3 && path[0] == '/' && path[2] == ':' {
+		path = path[1:]
+	}
+	return filepath.FromSlash(path)
 }

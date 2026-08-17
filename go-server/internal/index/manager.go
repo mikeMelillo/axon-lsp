@@ -1,6 +1,7 @@
 package index
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -29,7 +30,7 @@ type Manager struct {
 	workspaceFileSymbols map[string]map[string]Symbol
 	externalFileSymbols  map[string]map[string]Symbol
 	documentSymbols      map[string][]DocumentSymbol
-	workspaceRoot        string
+	workspaceRoots       []ScanRoot
 	extraRoots           []ScanRoot
 }
 
@@ -86,19 +87,27 @@ func (m *Manager) SetMode(mode Mode) {
 }
 
 func (m *Manager) UpdateLocalIndex(workspaceRoot string) {
-	workspaceRoot = normalizeRootPath(workspaceRoot)
+	m.SetWorkspaceRoots([]ScanRoot{{Path: workspaceRoot, Kind: ScanRootWorkspace, Label: "workspace"}})
+}
+
+func (m *Manager) SetWorkspaceRoots(roots []ScanRoot) {
+	paths := normalizeScanRoots(roots)
 	fileSymbols := map[string]map[string]Symbol{}
 	docSymbols := map[string][]DocumentSymbol{}
-	scanRoot(workspaceRoot, "workspace", func(uri string, symbols map[string]Symbol, docs []DocumentSymbol) {
-		if len(symbols) > 0 {
-			fileSymbols[uri] = annotateSymbols(symbols, "workspace", OriginLocal)
-		}
-		if len(docs) > 0 {
-			docSymbols[uri] = docs
-		}
-	})
+	for _, root := range paths {
+		label := workspaceRootLabel(root)
+		scanRoot(root.Path, label, func(uri string, symbols map[string]Symbol, docs []DocumentSymbol) {
+			if len(symbols) > 0 {
+				fileSymbols[uri] = annotateSymbols(symbols, label, OriginLocal)
+			}
+			if len(docs) > 0 {
+				docSymbols[uri] = docs
+			}
+		})
+	}
 	m.mu.Lock()
-	m.workspaceRoot = workspaceRoot
+	removeDocumentSymbols(m.documentSymbols, m.workspaceFileSymbols, fileSymbols)
+	m.workspaceRoots = paths
 	m.workspaceFileSymbols = fileSymbols
 	mergeDocumentSymbols(m.documentSymbols, docSymbols)
 	m.rebuildLocalFuncsLocked()
@@ -111,12 +120,12 @@ func (m *Manager) SetExtraRoots(roots []ScanRoot) {
 	externalFileSymbols := map[string]map[string]Symbol{}
 	docSymbols := map[string][]DocumentSymbol{}
 	m.mu.RLock()
-	workspaceRoot := m.workspaceRoot
+	workspaceRoots := append([]ScanRoot(nil), m.workspaceRoots...)
 	m.mu.RUnlock()
 	for _, root := range paths {
 		label := rootLabel(root)
 		scanRoot(root.Path, label, func(uri string, symbols map[string]Symbol, docs []DocumentSymbol) {
-			if isUnderRoot(pathFromURI(uri), workspaceRoot) {
+			if isUnderAnyRoot(pathFromURI(uri), workspaceRoots) {
 				return
 			}
 			if len(symbols) > 0 {
@@ -128,6 +137,7 @@ func (m *Manager) SetExtraRoots(roots []ScanRoot) {
 		})
 	}
 	m.mu.Lock()
+	removeDocumentSymbols(m.documentSymbols, m.externalFileSymbols, m.workspaceFileSymbols)
 	m.extraRoots = paths
 	m.externalFileSymbols = externalFileSymbols
 	mergeDocumentSymbols(m.documentSymbols, docSymbols)
@@ -347,7 +357,8 @@ func (m *Manager) rebuildExternalFuncsLocked() {
 	for _, root := range m.extraRoots {
 		uris := make([]string, 0)
 		for uri := range m.externalFileSymbols {
-			if isUnderRoot(pathFromURI(uri), root.Path) {
+			path := pathFromURI(uri)
+			if isUnderRoot(path, root.Path) && !isUnderAnyRoot(path, m.workspaceRoots) {
 				uris = append(uris, uri)
 			}
 		}
@@ -390,8 +401,10 @@ func (m *Manager) mergedLocked() map[string]Symbol {
 }
 
 func (m *Manager) classifyPathLocked(path string) (string, SymbolOrigin) {
-	if isUnderRoot(path, m.workspaceRoot) {
-		return "workspace", OriginLocal
+	for _, root := range m.workspaceRoots {
+		if isUnderRoot(path, root.Path) {
+			return workspaceRootLabel(root), OriginLocal
+		}
 	}
 	for _, root := range m.extraRoots {
 		if isUnderRoot(path, root.Path) {
@@ -646,6 +659,15 @@ func mergeDocumentSymbols(existing map[string][]DocumentSymbol, updates map[stri
 	}
 }
 
+func removeDocumentSymbols(existing map[string][]DocumentSymbol, files, keep map[string]map[string]Symbol) {
+	for uri := range files {
+		if _, ok := keep[uri]; ok {
+			continue
+		}
+		delete(existing, uri)
+	}
+}
+
 func scanRoot(root string, label string, onFile func(uri string, symbols map[string]Symbol, docs []DocumentSymbol)) {
 	if root == "" {
 		return
@@ -766,11 +788,21 @@ func mustReadFile(path string) string {
 }
 
 func rootLabel(root ScanRoot) string {
+	if root.Label != "" {
+		return root.Label
+	}
 	name := "externalPaths"
 	if root.Kind == ScanRootHaxall {
 		name = "haxallPaths"
 	}
 	return name + ":" + root.Path
+}
+
+func workspaceRootLabel(root ScanRoot) string {
+	if root.Label != "" {
+		return root.Label
+	}
+	return "workspace"
 }
 
 func normalizeRootPath(path string) string {
@@ -801,6 +833,15 @@ func isUnderRoot(path string, root string) bool {
 	return rel == "." || (!strings.HasPrefix(rel, "..") && rel != "")
 }
 
+func isUnderAnyRoot(path string, roots []ScanRoot) bool {
+	for _, root := range roots {
+		if isUnderRoot(path, root.Path) {
+			return true
+		}
+	}
+	return false
+}
+
 func fileURI(path string) string {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -810,12 +851,23 @@ func fileURI(path string) string {
 	if !strings.HasPrefix(abs, "/") {
 		abs = "/" + abs
 	}
-	return "file://" + abs
+	return (&url.URL{Scheme: "file", Path: abs}).String()
 }
 
 func pathFromURI(uri string) string {
 	uri = strings.TrimSpace(uri)
 	if strings.HasPrefix(uri, "file://") {
+		parsed, err := url.Parse(uri)
+		if err == nil {
+			trimmed := parsed.Path
+			if parsed.Host != "" && parsed.Host != "localhost" {
+				trimmed = "//" + parsed.Host + trimmed
+			}
+			if len(trimmed) >= 3 && trimmed[0] == '/' && trimmed[2] == ':' {
+				return filepath.FromSlash(trimmed[1:])
+			}
+			return filepath.FromSlash(trimmed)
+		}
 		trimmed := strings.TrimPrefix(uri, "file://")
 		if len(trimmed) >= 3 && trimmed[0] == '/' && trimmed[2] == ':' {
 			return filepath.FromSlash(trimmed[1:])

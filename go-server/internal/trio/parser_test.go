@@ -78,6 +78,29 @@ src:
 	}
 }
 
+func TestCommentsDoNotCreateTrioFunctionsOrRecordBoundaries(t *testing.T) {
+	t.Parallel()
+	source := `/*
+name: phantom
+func
+src:
+    () => do end
+---
+*/
+name: actual
+func
+src:
+    () => do end // ignoredCall()
+`
+	result := ParseURIContent("file:///comments.trio", source)
+	if _, ok := result["phantom"]; ok {
+		t.Fatal("did not expect a function declared in a block comment")
+	}
+	if _, ok := result["actual"]; !ok {
+		t.Fatal("expected the live Trio function")
+	}
+}
+
 func writeTempFile(t *testing.T, name, content string) string {
 	t.Helper()
 	dir := t.TempDir()

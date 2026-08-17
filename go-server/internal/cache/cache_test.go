@@ -1,6 +1,10 @@
 package cache
 
-import "testing"
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestEmbeddedFunctionsPreserveRanges(t *testing.T) {
 	t.Parallel()
@@ -36,5 +40,37 @@ func TestEmbeddedFunctionsPreserveVariantMetadata(t *testing.T) {
 	}
 	if variants[0].SourceModel == "" || variants[0].SourceVersion == "" || variants[0].SourceID == "" {
 		t.Fatalf("expected provenance metadata on variant, got %#v", variants[0])
+	}
+}
+
+func TestEmbeddedFunctionLocationsArePortable(t *testing.T) {
+	t.Parallel()
+	functions, err := LoadEmbeddedFunctions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundEmbeddedCore := false
+	foundWebSource := false
+	for name, variants := range functions {
+		for _, variant := range variants {
+			if strings.HasPrefix(variant.LocationURI, "file:") {
+				t.Fatalf("function %s contains nonportable location %q", name, variant.LocationURI)
+			}
+			if variant.SourceRoot != "" && filepath.IsAbs(variant.SourceRoot) {
+				t.Fatalf("function %s contains absolute source root %q", name, variant.SourceRoot)
+			}
+			if variant.LocationURI == EmbeddedCoreURI {
+				foundEmbeddedCore = true
+			}
+			if strings.HasPrefix(variant.LocationURI, "https://") {
+				foundWebSource = true
+			}
+		}
+	}
+	if !foundEmbeddedCore {
+		t.Fatal("expected an embedded core document location")
+	}
+	if !foundWebSource {
+		t.Fatal("expected a portable web source location")
 	}
 }

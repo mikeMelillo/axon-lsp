@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/cache"
 )
 
 func TestManagerLoadsCoreFunctions(t *testing.T) {
@@ -18,6 +20,24 @@ func TestManagerLoadsCoreFunctions(t *testing.T) {
 	}
 	if _, ok := mgr.FindFunction("read"); !ok {
 		t.Fatal("expected read to be in core cache")
+	}
+}
+
+func TestCoreDefinitionUsesEmbeddedDocumentURI(t *testing.T) {
+	t.Parallel()
+	mgr, err := NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr.SetMode(ModeDefs)
+
+	loc := mgr.GetDefinition("yield")
+
+	if loc == nil {
+		t.Fatal("expected bundled core definition")
+	}
+	if loc.URI != cache.EmbeddedCoreURI {
+		t.Fatalf("expected embedded core URI %q, got %q", cache.EmbeddedCoreURI, loc.URI)
 	}
 }
 
@@ -162,6 +182,75 @@ src:
 	loc := mgr.GetDefinition("sharedFunc")
 	if loc == nil || loc.URI != "file:///workspace/shared.trio" {
 		t.Fatalf("expected workspace definition precedence, got %#v", loc)
+	}
+}
+
+func TestSetWorkspaceRootsIndexesEveryRootAsLocal(t *testing.T) {
+	t.Parallel()
+	mgr, err := NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstRoot := t.TempDir()
+	secondRoot := t.TempDir()
+	writeTrioFunction(t, filepath.Join(firstRoot, "first.trio"), "firstWorkspaceFunc")
+	writeTrioFunction(t, filepath.Join(secondRoot, "second.trio"), "secondWorkspaceFunc")
+
+	mgr.SetWorkspaceRoots([]ScanRoot{
+		{Path: firstRoot, Kind: ScanRootWorkspace},
+		{Path: secondRoot, Kind: ScanRootWorkspace},
+	})
+
+	for _, name := range []string{"firstWorkspaceFunc", "secondWorkspaceFunc"} {
+		symbol, ok := mgr.FindFunction(name)
+		if !ok {
+			t.Fatalf("expected %s from workspace roots", name)
+		}
+		if symbol.Origin != OriginLocal {
+			t.Fatalf("expected %s to be local, got %#v", name, symbol)
+		}
+	}
+}
+
+func TestSetWorkspaceRootsRemovesSymbolsFromRemovedRoots(t *testing.T) {
+	t.Parallel()
+	mgr, err := NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstRoot := t.TempDir()
+	secondRoot := t.TempDir()
+	writeTrioFunction(t, filepath.Join(firstRoot, "first.trio"), "retainedWorkspaceFunc")
+	writeTrioFunction(t, filepath.Join(secondRoot, "second.trio"), "removedWorkspaceFunc")
+	mgr.SetWorkspaceRoots([]ScanRoot{{Path: firstRoot}, {Path: secondRoot}})
+
+	mgr.SetWorkspaceRoots([]ScanRoot{{Path: firstRoot}})
+
+	if _, ok := mgr.FindFunction("retainedWorkspaceFunc"); !ok {
+		t.Fatal("expected function from retained workspace root")
+	}
+	if _, ok := mgr.FindFunction("removedWorkspaceFunc"); ok {
+		t.Fatal("did not expect stale function from removed workspace root")
+	}
+}
+
+func TestWorkspaceRootTakesPrecedenceOverOverlappingExternalRoot(t *testing.T) {
+	t.Parallel()
+	mgr, err := NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	writeTrioFunction(t, filepath.Join(root, "overlap.trio"), "overlappingWorkspaceFunc")
+	mgr.SetExtraRoots([]ScanRoot{{Path: root, Kind: ScanRootExternal}})
+	mgr.SetWorkspaceRoots([]ScanRoot{{Path: root, Kind: ScanRootWorkspace}})
+
+	symbol, ok := mgr.FindFunction("overlappingWorkspaceFunc")
+	if !ok {
+		t.Fatal("expected function from overlapping workspace root")
+	}
+	if symbol.Origin != OriginLocal {
+		t.Fatalf("expected overlapping root to be local, got %#v", symbol)
 	}
 }
 
@@ -363,5 +452,13 @@ src:
 	}
 	if results[0].Name != "alphaFunc" {
 		t.Fatalf("expected prefix match first, got %#v", results)
+	}
+}
+
+func writeTrioFunction(t *testing.T, path, name string) {
+	t.Helper()
+	content := "name: " + name + "\nfunc\nsrc:\n    () => do end\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

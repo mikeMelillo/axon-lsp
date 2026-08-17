@@ -35,13 +35,28 @@
       ]
     },
     "strings": {
-      "name": "string.quoted.double.axon",
-      "begin": "\"",
-      "end": "\"",
       "patterns": [
         {
-          "name": "constant.character.escape.axon",
-          "match": "\\\\."
+          "name": "string.quoted.double.axon",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.axon",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.other.backtick.axon",
+          "begin": "`",
+          "end": "`",
+          "patterns": [
+            {
+              "name": "constant.character.escape.axon",
+              "match": "\\\\."
+            }
+          ]
         }
       ]
     },

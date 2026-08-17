@@ -2,13 +2,12 @@
   "name": "axon-lsp",
   "displayName": "Axon LSP (Project Haystack)",
   "description": "LSP and Syntax Highlighting for the Axon programming language",
-  "version": "0.3.1",
+  "version": "0.3.3",
   "publisher": "mikeMelillo",
   "engines": {
     "vscode": "^1.80.0"
   },
   "activationEvents": [
-    "onLanguage:axon",
     "onLanguage:xeto",
     "onLanguage:fantom"
   ],
@@ -46,6 +45,12 @@
           "type": "array",
           "default": [],
           "description": "Additional paths to scan for Axon functions outside the current workspace. Scanned recursively up to 4 directory levels."
+        },
+        "axonLsp.indexAllWorkspaceFolders": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "description": "Index every folder in a multi-root VS Code workspace as local Axon sources. Disabled by default because large workspaces may increase startup time and memory usage."
         },
         "axonLsp.mode": {
           "type": "string",

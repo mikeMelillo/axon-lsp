@@ -1,6 +1,9 @@
 package xeto
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseFuncsMixinExtractsCallableFunctions(t *testing.T) {
 	t.Parallel()
@@ -131,5 +134,47 @@ func TestFindEmbeddedAxonRegionMatchesRealFixtureLayout(t *testing.T) {
 	_, _, ok = FindEmbeddedAxonRegion("file:///workspace/funcs.xeto", content, 14, 0)
 	if !ok {
 		t.Fatal("expected region for blank line in wrapper body")
+	}
+}
+
+func TestCommentsDoNotCreateXetoFunctionsOrCloseEmbeddedRegions(t *testing.T) {
+	t.Parallel()
+	content := `/*
++Funcs {
+  phantom: Func { returns: Number }
+}
+*/
++Funcs {
+  // actual docs
+  actual: Func { returns: Number
+    <axon:---
+    // --->
+    read()
+    --->
+  }
+}`
+	parsed := ParseURIContent("file:///workspace/comments.xeto", content)
+	if _, ok := parsed["phantom"]; ok {
+		t.Fatal("did not expect a function from a block comment")
+	}
+	fn, ok := parsed["actual"]
+	if !ok {
+		t.Fatal("expected live Xeto function")
+	}
+	if fn.Doc != "actual docs" {
+		t.Fatalf("expected original Xeto documentation, got %q", fn.Doc)
+	}
+	if fn.Embedded == nil || !strings.Contains(fn.Embedded.Text, "read()") || !strings.Contains(fn.Embedded.Text, "// --->") {
+		t.Fatalf("expected comment and live code in full embedded region, got %#v", fn.Embedded)
+	}
+}
+
+func TestCommentedFallbackMarkersDoNotCreateEmbeddedRegion(t *testing.T) {
+	t.Parallel()
+	content := `// <axon:---
+read()
+// --->`
+	if _, _, ok := FindEmbeddedAxonRegion("file:///workspace/comments.xeto", content, 1, 0); ok {
+		t.Fatal("did not expect commented fallback markers to create a region")
 	}
 }

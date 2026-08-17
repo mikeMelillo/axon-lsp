@@ -7217,7 +7217,8 @@ doc:
   Examples:
     [1, 1, 2, 2].unique                 >> [1, 2]
     grid.unique("geoState")             >> unique states
-    grid.unique(["geoCity", "geoState"]) >> city,state combos  
+    grid.unique(["geoCity", geoState"]) >> city,state combos
+
 func
 is:[^func]
 lib:^lib:axon

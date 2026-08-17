@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/lexer"
 )
 
 type ParsedFunction struct {
@@ -31,7 +33,9 @@ func ParseFile(path string) map[string]ParsedFunction {
 }
 
 func ParseURIContent(uri, content string) map[string]ParsedFunction {
-	lines := strings.Split(string(content), "\n")
+	masked := lexer.MaskComments(content)
+	lines := strings.Split(masked.Text, "\n")
+	originalLines := strings.Split(content, "\n")
 	found := make(map[string]ParsedFunction)
 
 	for i, line := range lines {
@@ -60,7 +64,7 @@ func ParseURIContent(uri, content string) map[string]ParsedFunction {
 		}
 		docLines := []string{}
 		for j := i - 1; j >= 0; j-- {
-			prev := strings.TrimSpace(lines[j])
+			prev := strings.TrimSpace(originalLines[j])
 			switch {
 			case strings.HasPrefix(prev, "**"):
 				docLines = append([]string{strings.TrimSpace(strings.TrimPrefix(prev, "**"))}, docLines...)

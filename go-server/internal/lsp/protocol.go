@@ -23,7 +23,13 @@ type responseError struct {
 type initializeParams struct {
 	RootURI               string                 `json:"rootUri"`
 	RootPath              string                 `json:"rootPath"`
+	WorkspaceFolders      []workspaceFolder      `json:"workspaceFolders,omitempty"`
 	InitializationOptions *initializationOptions `json:"initializationOptions,omitempty"`
+}
+
+type workspaceFolder struct {
+	URI  string `json:"uri"`
+	Name string `json:"name"`
 }
 
 type initializationOptions struct {
@@ -31,9 +37,32 @@ type initializationOptions struct {
 }
 
 type settingsPayload struct {
-	HaxallPaths   []string `json:"haxallPaths"`
-	ExternalPaths []string `json:"externalPaths"`
-	Mode          string   `json:"mode"`
+	HaxallPaths              []string `json:"haxallPaths"`
+	ExternalPaths            []string `json:"externalPaths"`
+	IndexAllWorkspaceFolders bool     `json:"indexAllWorkspaceFolders"`
+	Mode                     string   `json:"mode"`
+}
+
+type didChangeWorkspaceFoldersParams struct {
+	Event workspaceFoldersChangeEvent `json:"event"`
+}
+
+type workspaceFoldersChangeEvent struct {
+	Added   []workspaceFolder `json:"added"`
+	Removed []workspaceFolder `json:"removed"`
+}
+
+type didChangeWatchedFilesParams struct {
+	Changes []fileEvent `json:"changes"`
+}
+
+type fileEvent struct {
+	URI  string `json:"uri"`
+	Type int    `json:"type"`
+}
+
+type embeddedDocumentParams struct {
+	URI string `json:"uri"`
 }
 
 type textDocumentIdentifier struct {
@@ -128,6 +157,16 @@ type serverCapabilities struct {
 	DocumentSymbolProvider  bool                    `json:"documentSymbolProvider,omitempty"`
 	WorkspaceSymbolProvider bool                    `json:"workspaceSymbolProvider,omitempty"`
 	CodeActionProvider      bool                    `json:"codeActionProvider,omitempty"`
+	Workspace               workspaceCapabilities   `json:"workspace,omitempty"`
+}
+
+type workspaceCapabilities struct {
+	WorkspaceFolders workspaceFolderCapabilities `json:"workspaceFolders"`
+}
+
+type workspaceFolderCapabilities struct {
+	Supported           bool `json:"supported"`
+	ChangeNotifications bool `json:"changeNotifications"`
 }
 
 type textDocumentSyncOptions struct {

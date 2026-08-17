@@ -3,10 +3,10 @@ package cache
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
-	"runtime"
 	"strings"
 )
+
+const EmbeddedCoreURI = "axon-ext:/coreFuncs.trio"
 
 type serializedLocation struct {
 	URI   string           `json:"uri"`
@@ -104,7 +104,7 @@ func deserializeLocationURI(loc *serializedLocation) string {
 	}
 	uri := loc.URI
 	if uri == "axon-ext://coreFuncs.trio" {
-		uri = embeddedCoreURI()
+		uri = EmbeddedCoreURI
 	}
 	return uri
 }
@@ -114,17 +114,4 @@ func deserializeRange(loc *serializedLocation) serializedRange {
 		return serializedRange{}
 	}
 	return *loc.Range
-}
-
-func embeddedCoreURI() string {
-	_, current, _, ok := runtime.Caller(0)
-	if !ok {
-		return "file:///coreFuncs.trio"
-	}
-	path := filepath.Join(filepath.Dir(current), "assets", "coreFuncs.trio")
-	path = filepath.ToSlash(path)
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	return "file://" + path
 }

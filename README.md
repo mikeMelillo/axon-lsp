@@ -58,11 +58,13 @@ Available settings:
 
 - `axonLsp.haxallPaths`: paths to Haxall installations or source trees
 - `axonLsp.externalPaths`: additional directories to scan for Axon functions
+- `axonLsp.indexAllWorkspaceFolders`: index every folder in a multi-root VS Code workspace as local Axon sources
 
 Notes:
 
-- Both settings are indexed recursively up to 4 directory levels below each configured root.
+- Configured Haxall and external paths are indexed recursively up to 4 directory levels below each root.
 - `axonLsp.haxallPaths` can point at a Haxall-style clone root; the server will walk down into likely source folders as long as they fall within that depth budget.
+- Multi-root indexing is disabled by default, so only the first VS Code workspace folder is scanned. Enabling it may increase startup time and memory usage for large workspaces.
 - If the same function exists in multiple places, the extension prefers workspace definitions first, then configured extra roots, then the bundled core cache.
 
 ## How It Works

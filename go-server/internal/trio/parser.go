@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/ast"
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/lexer"
 )
 
 type ParsedFunction struct {
@@ -46,7 +47,7 @@ func ParseContent(path, content string) map[string]ParsedFunction {
 }
 
 func ParseURIContent(uri, content string) map[string]ParsedFunction {
-	records := splitRecords(content)
+	records := splitRecords(lexer.MaskComments(content).Text)
 	found := make(map[string]ParsedFunction)
 
 	for _, record := range records {
