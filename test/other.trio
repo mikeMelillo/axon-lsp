@@ -4,7 +4,7 @@ doc: "Does a specific project calculation"
 src:
     (abc, efg) => do
         
-        readAll().m
+        readAll()
 
     end
 -------

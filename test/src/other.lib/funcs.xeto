@@ -5,17 +5,17 @@
     <axon:---
         
         data: a + b
-        newString: wrapper(5,"data")
+        newString: wrapper("data","lala")
 
         wrapper()
 
         hisData: hisRead()
 
-        points: readAll(point and discharge and air and temp, "opts")
+        points: readAll(point and discharge and air and temp, {limit:10})
 
         myList: ["a","b","c"]
 
-        info: toGrid(myList).round()
+        info: toGrid(myists).round()
         x: round(toGrid(myList)).toStr()
 
         myString: "llama"

@@ -714,6 +714,12 @@ func (s *Server) publishDiagnostics(uri string) error {
 	if s.manager == nil {
 		return nil
 	}
+
+	ext := strings.ToLower(filepath.Ext(pathFromURI(uri)))
+	if ext != ".trio" && ext != ".xeto" {
+		return nil
+	}
+
 	doc, ok := s.document(uri)
 	if !ok {
 		path := pathFromURI(uri)
