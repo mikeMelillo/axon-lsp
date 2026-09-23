@@ -18,6 +18,40 @@ func TestReportsUndefinedFunction(t *testing.T) {
 	}
 }
 
+func TestReportsDefinitePrimitiveArgumentMismatch(t *testing.T) {
+	t.Parallel()
+	mgr, err := index.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostics := Validate("file:///test.xeto", `round("bad")`, mgr)
+	if len(diagnostics) == 0 || diagnostics[0].Severity != 2 || diagnostics[0].Message != "Argument val expects Number; received Str" {
+		t.Fatalf("unexpected diagnostics: %#v", diagnostics)
+	}
+}
+
+func TestReportsUndefinedSimpleArgument(t *testing.T) {
+	t.Parallel()
+	mgr, err := index.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	uri := "file:///test.xeto"
+	diagnostics := Validate(uri, "round(blue)", mgr)
+	found := false
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Message == "Undefined variable: blue" {
+			found = true
+			if diagnostic.Range.Start.Character != 6 || diagnostic.Range.End.Character != 10 {
+				t.Fatalf("unexpected variable range: %#v", diagnostic.Range)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected undefined variable diagnostic, got %#v", diagnostics)
+	}
+}
+
 func TestIgnoresFunctionParameters(t *testing.T) {
 	t.Parallel()
 	mgr, err := index.NewManager()

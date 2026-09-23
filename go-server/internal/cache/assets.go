@@ -8,4 +8,7 @@ var (
 
 	//go:embed assets/coreFuncs.trio
 	EmbeddedCoreFuncs []byte
+
+	//go:embed assets/xeto_sources.json
+	EmbeddedXetoSources []byte
 )

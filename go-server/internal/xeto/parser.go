@@ -1,11 +1,25 @@
 package xeto
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/lexer"
 )
+
+func ParseFile(path string) map[string]ParsedFunction {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return map[string]ParsedFunction{}
+	}
+	return ParseURIContent(fileURI(path), string(content))
+}
+
+func fileURI(path string) string {
+	return "file://" + filepath.ToSlash(path)
+}
 
 type EmbeddedAxonRegion struct {
 	Text      string
@@ -18,6 +32,7 @@ type ParsedFunction struct {
 	Doc        string
 	ArgsStr    string
 	Params     []string
+	ParamTypes map[string]string
 	ReturnType string
 	URI        string
 	StartLine  int
@@ -70,13 +85,14 @@ func ParseURIContent(uri, content string) map[string]ParsedFunction {
 			name := match[1]
 			nameChar := strings.Index(line, name)
 			originalBlock, maskedBlock, endLine, endChar := captureFuncBlock(lines, originalLines, i)
-			params, argsStr, returnType, embedded := parseFuncSignature(originalBlock, maskedBlock, i)
+			params, paramTypes, argsStr, returnType, embedded := parseFuncSignature(originalBlock, maskedBlock, i)
 			doc := strings.TrimSpace(strings.Join(cleanDocLines(pendingDoc), "\n"))
 			found[name] = ParsedFunction{
 				Name:       name,
 				Doc:        doc,
 				ArgsStr:    argsStr,
 				Params:     params,
+				ParamTypes: paramTypes,
 				ReturnType: returnType,
 				URI:        uri,
 				StartLine:  i,
@@ -167,11 +183,11 @@ func captureFuncBlock(lines, originalLines []string, start int) (string, string,
 	return originalBuilder.String(), maskedBuilder.String(), last, len(lines[last])
 }
 
-func parseFuncSignature(originalBlock, maskedBlock string, blockStartLine int) ([]string, string, string, *EmbeddedAxonRegion) {
+func parseFuncSignature(originalBlock, maskedBlock string, blockStartLine int) ([]string, map[string]string, string, string, *EmbeddedAxonRegion) {
 	bodyStart := strings.Index(maskedBlock, "{")
 	bodyEnd := strings.LastIndex(maskedBlock, "}")
 	if bodyStart < 0 || bodyEnd <= bodyStart {
-		return nil, "()", "", nil
+		return nil, nil, "()", "", nil
 	}
 	maskedBody := maskedBlock[bodyStart+1 : bodyEnd]
 	originalBody := originalBlock[bodyStart+1 : bodyEnd]
@@ -179,6 +195,7 @@ func parseFuncSignature(originalBlock, maskedBlock string, blockStartLine int) (
 	originalLines := strings.Split(originalBody, "\n")
 	inAxon := false
 	params := []string{}
+	paramTypes := map[string]string{}
 	argLabels := []string{}
 	returnType := ""
 	bodyLines := []string{}
@@ -217,6 +234,7 @@ func parseFuncSignature(originalBlock, maskedBlock string, blockStartLine int) (
 				continue
 			}
 			params = append(params, name)
+			paramTypes[name] = value
 			argLabels = append(argLabels, name+": "+value)
 		}
 	}
@@ -231,7 +249,7 @@ func parseFuncSignature(originalBlock, maskedBlock string, blockStartLine int) (
 		}
 		region = &EmbeddedAxonRegion{Text: strings.Join(bodyLines, "\n"), StartLine: bodyStartLine, EndLine: bodyEndLine}
 	}
-	return params, argsStr, returnType, region
+	return params, paramTypes, argsStr, returnType, region
 }
 
 func splitSignatureTokens(line string) []string {

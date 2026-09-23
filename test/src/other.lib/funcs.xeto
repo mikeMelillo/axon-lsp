@@ -4,13 +4,25 @@
   
     <axon:---
         
-        a + b
-        wrapper()
+        data: a + b
+        newString: wrapper(5,"data")
 
         wrapper()
 
-        hisRead()
-        
+        hisData: hisRead()
+
+        points: readAll(point and discharge and air and temp, "opts")
+
+        myList: ["a","b","c"]
+
+        info: toGrid(myList).round()
+        x: round(toGrid(myList)).toStr()
+
+        myString: "llama"
+
+        myString.wrapper(a.parseNumber())
+
+                
         
     --->
   }
@@ -18,6 +30,8 @@
   wrapper: Func {foo: Str, bar: Number, returns: Str
   
     <axon:---
+
+        return foo
         
     --->
 

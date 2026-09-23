@@ -83,18 +83,8 @@ function activate(context) {
         },
         outputChannel: outputChannel,
         traceOutputChannel: vscode_1.window.createOutputChannel('Axon LSP Trace'),
-        middleware: {
-            provideDefinition: async (document, position, token, next) => {
-                const result = await next(document, position, token);
-                const locations = Array.isArray(result) ? result : result ? [result] : [];
-                const external = locations.find((item) => item instanceof vscode_1.Location && item.uri.scheme.startsWith('http'));
-                if (external instanceof vscode_1.Location) {
-                    await vscode_1.env.openExternal(external.uri);
-                    return null;
-                }
-                return result;
-            }
-        }
+        // Definition requests must remain side-effect free. VS Code can issue
+        // them for Ctrl-hover as well as explicit navigation commands.
     };
     // 5. Create and start the client
     client = new node_1.LanguageClient('axonLspClient', 'Axon Language Server', serverOptions, clientOptions);

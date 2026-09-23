@@ -29,6 +29,7 @@
 - Introduce spec-oriented symbol and type modeling
 - Support Xeto-backed workflows and richer type metadata
 - Adapt indexing around the upcoming 4.x architecture
+- See `docs/type-intelligence.md` for the active type-intelligence plan.
 
 ## Architecture Notes
 

@@ -1,12 +1,11 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { workspace, ExtensionContext, window, commands, env, Uri, Location } from 'vscode';
+import { workspace, ExtensionContext, window, commands, env, Uri } from 'vscode';
 import {
     LanguageClient,
     LanguageClientOptions,
     ServerOptions,
-    TransportKind,
-    ProvideDefinitionSignature
+    TransportKind
 } from 'vscode-languageclient/node';
 
 let client: LanguageClient;
@@ -56,18 +55,8 @@ export function activate(context: ExtensionContext) {
         },
         outputChannel: outputChannel,
         traceOutputChannel: window.createOutputChannel('Axon LSP Trace'),
-        middleware: {
-            provideDefinition: async (document, position, token, next: ProvideDefinitionSignature) => {
-                const result = await next(document, position, token);
-                const locations = Array.isArray(result) ? result : result ? [result] : [];
-                const external = locations.find((item) => item instanceof Location && item.uri.scheme.startsWith('http'));
-                if (external instanceof Location) {
-                    await env.openExternal(external.uri);
-                    return null;
-                }
-                return result;
-            }
-        }
+        // Definition requests must remain side-effect free. VS Code can issue
+        // them for Ctrl-hover as well as explicit navigation commands.
     };
 
     // 5. Create and start the client

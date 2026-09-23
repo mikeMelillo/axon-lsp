@@ -36,6 +36,7 @@ type Symbol struct {
 	Doc           string
 	ArgsStr       string
 	Params        []string
+	ParamTypes    map[string]string
 	ReturnType    string
 	ItemKind      int
 	Location      *Location
@@ -87,6 +88,7 @@ type WorkspaceSymbol struct {
 
 type CompletionItem struct {
 	Label         string      `json:"label"`
+	SortText      string      `json:"sortText,omitempty"`
 	Kind          int         `json:"kind,omitempty"`
 	Detail        string      `json:"detail,omitempty"`
 	Documentation interface{} `json:"documentation,omitempty"`

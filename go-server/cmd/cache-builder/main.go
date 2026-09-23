@@ -11,6 +11,7 @@ import (
 
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/fantom"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/trio"
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/xeto"
 )
 
 type sourceDescriptor struct {
@@ -37,18 +38,19 @@ type position struct {
 }
 
 type serializedVariant struct {
-	Name          string    `json:"name"`
-	Doc           string    `json:"doc"`
-	ArgsStr       string    `json:"args_str"`
-	Params        []string  `json:"params"`
-	ReturnType    string    `json:"return_type,omitempty"`
-	Kind          int       `json:"kind"`
-	Location      *location `json:"location,omitempty"`
-	SourceKind    string    `json:"source_kind"`
-	SourceModel   string    `json:"source_model"`
-	SourceVersion string    `json:"source_version"`
-	SourceID      string    `json:"source_id"`
-	SourceRoot    string    `json:"source_root,omitempty"`
+	Name          string            `json:"name"`
+	Doc           string            `json:"doc"`
+	ArgsStr       string            `json:"args_str"`
+	Params        []string          `json:"params"`
+	ParamTypes    map[string]string `json:"param_types,omitempty"`
+	ReturnType    string            `json:"return_type,omitempty"`
+	Kind          int               `json:"kind"`
+	Location      *location         `json:"location,omitempty"`
+	SourceKind    string            `json:"source_kind"`
+	SourceModel   string            `json:"source_model"`
+	SourceVersion string            `json:"source_version"`
+	SourceID      string            `json:"source_id"`
+	SourceRoot    string            `json:"source_root,omitempty"`
 }
 
 type serializedCache struct {
@@ -66,8 +68,9 @@ func main() {
 	coreSource := filepath.Join(repoRoot, "cache_sources", "coreFuncs.trio")
 	assetJSON := filepath.Join(repoRoot, "go-server", "internal", "cache", "assets", "function_cache.json")
 	assetCore := filepath.Join(repoRoot, "go-server", "internal", "cache", "assets", "coreFuncs.trio")
+	assetXeto := filepath.Join(repoRoot, "go-server", "internal", "cache", "assets", "xeto_sources.json")
 	haxall31Root := filepath.Join(repoRoot, "cache_sources", "haxall-3.1.12")
-	haxall40Root := filepath.Join(repoRoot, "cache_sources", "haxall-4.0.5")
+	haxall40Root := filepath.Join(repoRoot, "cache_sources", "haxall-4.0.6")
 
 	sources := []sourceDescriptor{
 		{
@@ -90,15 +93,21 @@ func main() {
 			ID:         "haxall40",
 			Kind:       "haxall",
 			Model:      "specs",
-			Version:    "4.0.5",
+			Version:    "4.0.6",
 			Root:       haxall40Root,
-			GitHubBase: envOrDefault("GITHUB_BASE_4", "https://github.com/haxall/haxall/blob/8bcaee9a74e14d7bd594eb0c923767ea3b804862"),
+			GitHubBase: envOrDefault("GITHUB_BASE_4", "https://github.com/haxall/haxall/blob/b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f"),
 		},
 	}
 
 	functions := map[string][]serializedVariant{}
+	xetoSources := map[string]string{}
 	for _, source := range sources {
-		collectSource(functions, source)
+		if source.CoreTrioFile == "" {
+			if info, err := os.Stat(source.Root); err != nil || !info.IsDir() {
+				panic(fmt.Sprintf("required cache source is missing: %s", source.Root))
+			}
+		}
+		collectSource(functions, xetoSources, source)
 	}
 	sortCache(functions)
 	data, err := json.MarshalIndent(serializedCache{Functions: functions}, "", "  ")
@@ -115,6 +124,13 @@ func main() {
 	if err := os.WriteFile(assetCore, coreData, 0o644); err != nil {
 		panic(err)
 	}
+	xetoData, err := json.MarshalIndent(xetoSources, "", "  ")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(assetXeto, xetoData, 0o644); err != nil {
+		panic(err)
+	}
 	count := 0
 	for _, variants := range functions {
 		count += len(variants)
@@ -122,7 +138,7 @@ func main() {
 	fmt.Printf("Wrote %d variants across %d function names\n", count, len(functions))
 }
 
-func collectSource(functions map[string][]serializedVariant, source sourceDescriptor) {
+func collectSource(functions map[string][]serializedVariant, xetoSources map[string]string, source sourceDescriptor) {
 	if source.CoreTrioFile != "" {
 		for _, fn := range trio.ParseFile(source.CoreTrioFile) {
 			functions[fn.Name] = append(functions[fn.Name], serializeTrio(fn, source))
@@ -142,13 +158,33 @@ func collectSource(functions map[string][]serializedVariant, source sourceDescri
 			for _, fn := range trio.ParseFile(path) {
 				functions[fn.Name] = append(functions[fn.Name], serializeTrio(fn, source))
 			}
-		case strings.HasSuffix(path, ".fan"):
+		case strings.HasSuffix(path, ".fan") && source.ID != "haxall40":
 			for _, fn := range fantom.ParseFile(path) {
 				functions[fn.Name] = append(functions[fn.Name], serializeFantom(fn, source))
+			}
+		case strings.HasSuffix(path, ".xeto") && !isTestXeto(path):
+			if content, readErr := os.ReadFile(path); readErr == nil {
+				xetoSources[xetoAssetPath(path, source)] = string(content)
+			}
+			for _, fn := range xeto.ParseFile(path) {
+				functions[fn.Name] = append(functions[fn.Name], serializeXeto(fn, source))
 			}
 		}
 		return nil
 	})
+}
+
+func xetoAssetPath(path string, source sourceDescriptor) string {
+	root := filepath.Join(source.Root, "src", "xeto")
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return filepath.Base(path)
+	}
+	return "haxall/" + source.Version + "/" + filepath.ToSlash(rel)
+}
+
+func isTestXeto(path string) bool {
+	return strings.Contains(filepath.ToSlash(path), "/hx.test") || strings.Contains(filepath.ToSlash(path), "/test/")
 }
 
 func sortCache(functions map[string][]serializedVariant) {
@@ -192,6 +228,30 @@ func serializeTrio(fn trio.ParsedFunction, source sourceDescriptor) serializedVa
 		SourceID:      source.ID,
 		SourceRoot:    source.ID,
 	}
+}
+
+func serializeXeto(fn xeto.ParsedFunction, source sourceDescriptor) serializedVariant {
+	return serializedVariant{
+		Name: fn.Name, Doc: fn.Doc, ArgsStr: fn.ArgsStr, Params: fn.Params, ParamTypes: fn.ParamTypes,
+		ReturnType: fn.ReturnType, Kind: 3,
+		Location:   serializeXetoLocation(fn.URI, fn.StartLine, fn.StartChar, fn.EndLine, fn.EndChar, source),
+		SourceKind: source.Kind, SourceModel: "specs", SourceVersion: source.Version, SourceID: source.ID, SourceRoot: source.ID,
+	}
+}
+
+func serializeXetoLocation(uri string, startLine, startChar, endLine, endChar int, source sourceDescriptor) *location {
+	path := filepath.ToSlash(uri)
+	if idx := strings.Index(path, "/cache_sources/"); idx >= 0 {
+		path = strings.TrimPrefix(path[idx+len("/cache_sources/"):], "haxall-"+source.Version+"/")
+	}
+	if source.GitHubBase != "" {
+		rel := strings.TrimPrefix(path, "src/xeto/")
+		return &location{URI: "axon-ext:/haxall/" + source.Version + "/" + rel, Range: &struct {
+			Start position `json:"start"`
+			End   position `json:"end"`
+		}{Start: position{Line: startLine, Character: startChar}, End: position{Line: endLine, Character: endChar}}}
+	}
+	return serializeLocationWithRange(uri, startLine, startChar, endLine, endChar, source)
 }
 
 func serializeFantom(fn fantom.ParsedFunction, source sourceDescriptor) serializedVariant {

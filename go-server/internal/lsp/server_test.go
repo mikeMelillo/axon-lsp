@@ -392,6 +392,79 @@ func TestEmbeddedXetoDoEndHighlightsAndFoldingRanges(t *testing.T) {
 	}
 }
 
+func TestEmbeddedXetoHoverShowsSignatureTypes(t *testing.T) {
+	t.Parallel()
+	server := NewServer(bytes.NewReader(nil), &bytes.Buffer{})
+	manager, err := index.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.manager = manager
+	uri := "file:///workspace/types.xeto"
+	doc := `+Funcs {
+  concat: Func { a: Str, b: Str, returns: Str
+    <axon:---
+    text: "hello"
+    count: 42
+    list: []
+    result: concat(a, b)
+    result + text
+    --->
+  }
+}`
+	server.setDocument(uri, doc)
+
+	hover := func(line, character int) string {
+		server.writer = &bytes.Buffer{}
+		params, _ := json.Marshal(hoverParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: index.Position{Line: line, Character: character}})
+		if err := server.handle(requestMessage{ID: json.RawMessage("1"), Method: "textDocument/hover", Params: params}); err != nil {
+			t.Fatal(err)
+		}
+		return server.writer.(*bytes.Buffer).String()
+	}
+	if out := hover(6, 19); !strings.Contains(out, "**a**: `Str`") {
+		t.Fatalf("expected parameter type hover, got %q", out)
+	}
+	if out := hover(3, 6); !strings.Contains(out, "**text**: `Str`") {
+		t.Fatalf("expected literal local type hover, got %q", out)
+	}
+	if out := hover(4, 6); !strings.Contains(out, "**count**: `Number`") {
+		t.Fatalf("expected numeric local type hover, got %q", out)
+	}
+	if out := hover(5, 6); !strings.Contains(out, "**list**: `List`") {
+		t.Fatalf("expected list local type hover, got %q", out)
+	}
+	if out := hover(7, 5); !strings.Contains(out, "**result**: `Str`") {
+		t.Fatalf("expected return type hover, got %q", out)
+	}
+}
+
+func TestCallAtPositionTracksActiveArgument(t *testing.T) {
+	t.Parallel()
+	view := embeddedRegionView{lines: []string{"foo(1, bar(2, 3), "}}
+	name, active, ok := callAtPosition(view, index.Position{Line: 0, Character: 20})
+	if !ok || name != "foo" || active != 2 {
+		t.Fatalf("unexpected call context: name=%q active=%d ok=%t", name, active, ok)
+	}
+}
+
+func TestEmbeddedExpressionTypeUsesFinalChainedCall(t *testing.T) {
+	t.Parallel()
+	server := NewServer(bytes.NewReader(nil), &bytes.Buffer{})
+	manager, err := index.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.manager = manager
+	view := embeddedRegionView{lines: []string{"myList: []"}}
+	for _, expression := range []string{"toGrid(myList).round()", "toGrid(myList).round", "toGrid.round()", "toGrid.round"} {
+		typeName, ok := server.embeddedExpressionType("file:///workspace/test.xeto", view, 0, expression, nil)
+		if !ok || typeName != "Number" {
+			t.Fatalf("expected final chained return type Number for %q, got %q ok=%t", expression, typeName, ok)
+		}
+	}
+}
+
 func TestTrioDefcompAndBranchPairFeatures(t *testing.T) {
 	t.Parallel()
 	server := NewServer(bytes.NewReader(nil), &bytes.Buffer{})

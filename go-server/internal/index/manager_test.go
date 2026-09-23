@@ -106,6 +106,28 @@ src:
 	}
 }
 
+func TestXetoContextPrefersModernCoreVariant(t *testing.T) {
+	t.Parallel()
+	mgr, err := NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	trioFn, ok := mgr.FindFunctionForURI("size", "file:///workspace/core.trio")
+	if !ok {
+		t.Fatal("expected size function")
+	}
+	if trioFn.SourceID == "haxall40" {
+		t.Fatalf("expected legacy default for Trio, got %#v", trioFn)
+	}
+	xetoFn, ok := mgr.FindFunctionForURI("size", "file:///workspace/core.xeto")
+	if !ok {
+		t.Fatal("expected Xeto size function")
+	}
+	if xetoFn.SourceID != "haxall40" || xetoFn.ParamTypes["val"] != "Obj?" || xetoFn.ReturnType != "Number" {
+		t.Fatalf("expected typed modern variant, got %#v", xetoFn)
+	}
+}
+
 func TestGetDefinitionPrefersWorkspaceOverCore(t *testing.T) {
 	t.Parallel()
 	mgr, err := NewManager()

@@ -231,7 +231,11 @@ func (m *Manager) GetWorkspaceSymbols(query string) []WorkspaceSymbol {
 }
 
 func (m *Manager) BuildHover(funcName string) *Hover {
-	symbol, ok := m.FindFunction(funcName)
+	return m.BuildHoverForURI(funcName, "")
+}
+
+func (m *Manager) BuildHoverForURI(funcName, uri string) *Hover {
+	symbol, ok := m.FindFunctionForURI(funcName, uri)
 	if !ok {
 		return nil
 	}
@@ -254,6 +258,10 @@ func detailFor(symbol Symbol) string {
 }
 
 func (m *Manager) GetDefinition(symbol string) *Location {
+	return m.GetDefinitionForURI(symbol, "")
+}
+
+func (m *Manager) GetDefinitionForURI(symbol, uri string) *Location {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if loc := m.LocalFuncs[symbol].Location; loc != nil {
@@ -264,7 +272,8 @@ func (m *Manager) GetDefinition(symbol string) *Location {
 		copy := *loc
 		return &copy
 	}
-	if loc := m.CoreFuncs[symbol].Location; loc != nil {
+	core, _ := m.coreSymbolLocked(symbol, uri)
+	if loc := core.Location; loc != nil {
 		copy := *loc
 		return &copy
 	}
@@ -272,6 +281,10 @@ func (m *Manager) GetDefinition(symbol string) *Location {
 }
 
 func (m *Manager) FindFunction(name string) (Symbol, bool) {
+	return m.FindFunctionForURI(name, "")
+}
+
+func (m *Manager) FindFunctionForURI(name, uri string) (Symbol, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if symbol, ok := m.LocalFuncs[name]; ok {
@@ -279,6 +292,19 @@ func (m *Manager) FindFunction(name string) (Symbol, bool) {
 	}
 	if symbol, ok := m.ExternalFuncs[name]; ok {
 		return symbol, true
+	}
+	symbol, ok := m.coreSymbolLocked(name, uri)
+	return symbol, ok
+}
+
+func (m *Manager) coreSymbolLocked(name, uri string) (Symbol, bool) {
+	if strings.HasSuffix(strings.ToLower(uri), ".xeto") {
+		if variants := m.coreVariants[name]; len(variants) > 0 {
+			variant, ok := resolveVariantForMode(variants, ModeSpecs)
+			if ok {
+				return symbolFromVariant(variant), true
+			}
+		}
 	}
 	symbol, ok := m.CoreFuncs[name]
 	return symbol, ok
@@ -294,7 +320,11 @@ func (m *Manager) GetReferences(symbol string) []Location {
 }
 
 func (m *Manager) BuildSignatureHelp(funcName string) *SignatureHelp {
-	symbol, ok := m.FindFunction(funcName)
+	return m.BuildSignatureHelpForURI(funcName, "")
+}
+
+func (m *Manager) BuildSignatureHelpForURI(funcName, uri string) *SignatureHelp {
+	symbol, ok := m.FindFunctionForURI(funcName, uri)
 	if !ok {
 		return nil
 	}
@@ -507,6 +537,7 @@ func fromXeto(parsed map[string]xeto.ParsedFunction) (map[string]Symbol, []Docum
 			Doc:        normalizedDoc(symbol.Doc),
 			ArgsStr:    symbol.ArgsStr,
 			Params:     symbol.Params,
+			ParamTypes: symbol.ParamTypes,
 			ReturnType: symbol.ReturnType,
 			ItemKind:   3,
 			Location: &Location{URI: symbol.URI, Range: Range{
@@ -560,6 +591,7 @@ func symbolFromVariant(fn cache.FunctionVariant) Symbol {
 		Doc:           normalizedDoc(fn.Doc),
 		ArgsStr:       fn.ArgsStr,
 		Params:        fn.Params,
+		ParamTypes:    fn.ParamTypes,
 		ReturnType:    strings.TrimSpace(fn.ReturnType),
 		ItemKind:      fn.Kind,
 		Location:      loc,

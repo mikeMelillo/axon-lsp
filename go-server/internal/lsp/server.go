@@ -155,10 +155,13 @@ func (s *Server) handle(msg requestMessage) error {
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
 			return err
 		}
-		if params.URI != cache.EmbeddedCoreURI {
-			return s.writeResponse(msg.ID, nil, &responseError{Code: -32602, Message: "unknown embedded document"})
+		if params.URI == cache.EmbeddedCoreURI {
+			return s.writeResponse(msg.ID, string(cache.EmbeddedCoreFuncs), nil)
 		}
-		return s.writeResponse(msg.ID, string(cache.EmbeddedCoreFuncs), nil)
+		if content, ok := cache.XetoSource(params.URI); ok {
+			return s.writeResponse(msg.ID, content, nil)
+		}
+		return s.writeResponse(msg.ID, nil, &responseError{Code: -32602, Message: "unknown embedded document"})
 	case "shutdown":
 		s.shutdown = true
 		return s.writeResponse(msg.ID, map[string]any{}, nil)
@@ -233,6 +236,20 @@ func (s *Server) handle(msg requestMessage) error {
 				return s.writeResponse(msg.ID, index.CompletionList{IsIncomplete: false, Items: []index.CompletionItem{}}, nil)
 			} else {
 				serverLog.Printf("completion xeto hit uri=%s pos=%d:%d fn=%s region=%d:%d inner=%d:%d", params.TextDocument.URI, params.Position.Line, params.Position.Character, embeddedFuncName(fn), region.region.StartLine, region.region.EndLine, inner.Line, inner.Character)
+				completions := s.manager.GetCompletions()
+				if expected, ok := s.expectedCompletionType(params.TextDocument.URI, region, inner, fn); ok {
+					for i := range completions.Items {
+						if symbol, found := s.manager.FindFunctionForURI(completions.Items[i].Label, params.TextDocument.URI); found && len(symbol.Params) > 0 && symbol.ParamTypes[symbol.Params[0]] == expected {
+							completions.Items[i].SortText = "0-" + completions.Items[i].Label
+						} else {
+							completions.Items[i].SortText = "1-" + completions.Items[i].Label
+						}
+					}
+					for name := range s.scopeVariables(params.TextDocument.URI, region, inner.Line, fn, expected) {
+						completions.Items = append(completions.Items, index.CompletionItem{Label: name, Kind: 6, SortText: "0-" + name})
+					}
+				}
+				return s.writeResponse(msg.ID, completions, nil)
 			}
 		}
 		return s.writeResponse(msg.ID, s.manager.GetCompletions(), nil)
@@ -260,6 +277,47 @@ func (s *Server) handle(msg requestMessage) error {
 		}
 		return nil
 	}
+}
+
+func (s *Server) expectedCompletionType(uri string, region embeddedRegionView, pos index.Position, owner *xeto.ParsedFunction) (string, bool) {
+	line, ok := region.innerLine(pos.Line)
+	if !ok {
+		return "", false
+	}
+	prefix := line[:min(pos.Character, len(line))]
+	if dot := strings.LastIndex(prefix, "."); dot >= 0 && dot == len(strings.TrimRight(prefix, " \t"))-1 {
+		receiver := strings.TrimSpace(prefix[:dot])
+		return s.embeddedExpressionType(uri, region, pos.Line, receiver, owner)
+	}
+	if name, active, found := callAtPosition(region, pos); found {
+		symbol, found := s.manager.FindFunctionForURI(name, uri)
+		if found && active < len(symbol.Params) {
+			return symbol.ParamTypes[symbol.Params[active]], true
+		}
+	}
+	return "", false
+}
+
+func (s *Server) scopeVariables(uri string, region embeddedRegionView, lineNumber int, owner *xeto.ParsedFunction, expected string) map[string]struct{} {
+	variables := map[string]struct{}{}
+	if owner != nil {
+		for name, typeName := range owner.ParamTypes {
+			if expected == "" || typeName == expected {
+				variables[name] = struct{}{}
+			}
+		}
+	}
+	for i := 0; i <= lineNumber && i < len(region.lines); i++ {
+		line := strings.TrimSpace(region.lines[i])
+		colon := strings.Index(line, ":")
+		if colon > 0 && isIdentifier(strings.TrimSpace(line[:colon])) {
+			name := strings.TrimSpace(line[:colon])
+			if typeName, _, found := s.embeddedLocalType(uri, region, i, name, owner); found && (expected == "" || typeName == expected) {
+				variables[name] = struct{}{}
+			}
+		}
+	}
+	return variables
 }
 
 func (s *Server) handleCodeAction(msg requestMessage) error {
@@ -475,7 +533,7 @@ func (s *Server) handleDefinition(msg requestMessage) error {
 	if !ok {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
-	return s.writeResponse(msg.ID, s.manager.GetDefinition(match.Word), nil)
+	return s.writeResponse(msg.ID, s.manager.GetDefinitionForURI(match.Word, params.TextDocument.URI), nil)
 }
 
 func (s *Server) handleHover(msg requestMessage) error {
@@ -507,12 +565,12 @@ func (s *Server) handleHover(msg requestMessage) error {
 	if !ok {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
-	fn, found := s.manager.FindFunction(match.Word)
+	fn, found := s.manager.FindFunctionForURI(match.Word, params.TextDocument.URI)
 	if !found {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
 	_ = fn
-	hover := s.manager.BuildHover(match.Word)
+	hover := s.manager.BuildHoverForURI(match.Word, params.TextDocument.URI)
 	return s.writeResponse(msg.ID, hover, nil)
 }
 
@@ -543,7 +601,7 @@ func (s *Server) handleSignatureHelp(msg requestMessage) error {
 	}
 	for _, match := range resolver.AllWords(line) {
 		if match.End <= params.Position.Character {
-			if help := s.manager.BuildSignatureHelp(match.Word); help != nil {
+			if help := s.manager.BuildSignatureHelpForURI(match.Word, params.TextDocument.URI); help != nil {
 				return s.writeResponse(msg.ID, help, nil)
 			}
 		}
@@ -688,27 +746,222 @@ func (s *Server) handleEmbeddedDefinition(uri string, pos index.Position, _ json
 	if !ok {
 		return nil, true, nil
 	}
-	return s.manager.GetDefinition(match.Word), true, nil
+	return s.manager.GetDefinitionForURI(match.Word, uri), true, nil
 }
 
 func (s *Server) handleEmbeddedHover(uri string, pos index.Position) (*index.Hover, bool, error) {
-	region, _, innerPos, ok := s.embeddedRegionAt(uri, pos)
+	region, fn, innerPos, ok := s.embeddedRegionAt(uri, pos)
 	if !ok {
 		return nil, false, nil
 	}
 	line, ok := region.innerLine(innerPos.Line)
 	if !ok {
 		return nil, true, nil
+	}
+	if typeName, ok := literalAt(line, innerPos.Character); ok {
+		return &index.Hover{Contents: index.MarkupContent{Kind: "markdown", Value: fmt.Sprintf("**literal**: `%s`", typeName)}}, true, nil
 	}
 	match, ok := resolver.WordAt(line, innerPos.Character)
 	if !ok {
 		return nil, true, nil
 	}
-	return s.manager.BuildHover(match.Word), true, nil
+	if fn != nil {
+		if typeName, found := fn.ParamTypes[match.Word]; found {
+			return &index.Hover{Contents: index.MarkupContent{Kind: "markdown", Value: fmt.Sprintf("**%s**: `%s`\n\nParameter of `%s`.", match.Word, typeName, fn.Name)}}, true, nil
+		}
+		if typeName, source, found := s.embeddedLocalType(uri, region, innerPos.Line, match.Word, fn); found {
+			return &index.Hover{Contents: index.MarkupContent{Kind: "markdown", Value: fmt.Sprintf("**%s**: `%s`\n\nInferred from %s.", match.Word, typeName, source)}}, true, nil
+		}
+	}
+	return s.manager.BuildHoverForURI(match.Word, uri), true, nil
+}
+
+func (s *Server) embeddedLocalType(uri string, region embeddedRegionView, lineNumber int, name string, owner *xeto.ParsedFunction) (string, string, bool) {
+	for i := min(lineNumber, len(region.lines)-1); i >= 0; i-- {
+		line := strings.TrimSpace(region.lines[i])
+		colon := strings.Index(line, ":")
+		if colon <= 0 || strings.TrimSpace(line[:colon]) != name {
+			continue
+		}
+		rhs := strings.TrimSpace(line[colon+1:])
+		if typeName, ok := s.embeddedExpressionType(uri, region, i, rhs, owner); ok {
+			return typeName, "the expression", true
+		}
+	}
+	return "", "", false
+}
+
+func (s *Server) embeddedExpressionType(uri string, region embeddedRegionView, lineNumber int, expression string, owner *xeto.ParsedFunction) (string, bool) {
+	expression = strings.TrimSpace(expression)
+	if typeName, ok := literalType(expression); ok {
+		return typeName, true
+	}
+	if strings.Contains(expression, "+") {
+		parts := strings.Split(expression, "+")
+		left, lok := s.embeddedExpressionType(uri, region, lineNumber, strings.TrimSpace(parts[0]), owner)
+		right, rok := s.embeddedExpressionType(uri, region, lineNumber, strings.TrimSpace(strings.Join(parts[1:], "+")), owner)
+		if lok && rok && left == right {
+			return left, true
+		}
+	}
+	if calledName, ok := expressionCallName(expression); ok {
+		if fn, found := s.manager.FindFunctionForURI(calledName, uri); found && fn.ReturnType != "" {
+			return fn.ReturnType, true
+		}
+		if owner != nil && calledName == owner.Name && owner.ReturnType != "" {
+			return owner.ReturnType, true
+		}
+	}
+	for i := min(lineNumber, len(region.lines)-1); i >= 0; i-- {
+		line := strings.TrimSpace(region.lines[i])
+		colon := strings.Index(line, ":")
+		if colon > 0 && strings.TrimSpace(line[:colon]) == expression {
+			if typ, ok := s.embeddedExpressionType(uri, region, i, strings.TrimSpace(line[colon+1:]), owner); ok {
+				return typ, true
+			}
+		}
+	}
+	if owner != nil {
+		if typ, ok := owner.ParamTypes[expression]; ok {
+			return typ, true
+		}
+	}
+	return "", false
+}
+
+func expressionCallName(expression string) (string, bool) {
+	expression = strings.TrimSpace(expression)
+	open := strings.IndexByte(expression, '(')
+	// A dotted call chain produces its result from the final method call.
+	if dot := strings.LastIndex(expression, "."); dot >= 0 {
+		end := len(expression)
+		if methodOpen := strings.IndexAny(expression[dot+1:], "( \t\r\n"); methodOpen >= 0 {
+			end = dot + 1 + methodOpen
+		}
+		name := expression[dot+1 : end]
+		if isIdentifier(name) {
+			return name, true
+		}
+	}
+	if open < 0 {
+		return "", false
+	}
+	nameEnd := open
+	nameStart := nameEnd - 1
+	for nameStart >= 0 && (isIdentifierChar(expression[nameStart])) {
+		nameStart--
+	}
+	name := expression[nameStart+1 : nameEnd]
+	if !isIdentifier(name) {
+		return "", false
+	}
+	return name, true
+}
+
+func isIdentifier(value string) bool {
+	if value == "" {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		if !isIdentifierChar(value[i]) || (i == 0 && value[i] >= '0' && value[i] <= '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func isIdentifierChar(ch byte) bool {
+	return ch == '_' || ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9'
+}
+
+func literalAt(line string, character int) (string, bool) {
+	if typeName, ok := collectionLiteralAt(line, character); ok {
+		return typeName, true
+	}
+	for i := 0; i < len(line); i++ {
+		if line[i] == '"' || line[i] == '\'' {
+			quote := line[i]
+			end := i + 1
+			for end < len(line) && line[end] != quote {
+				end++
+			}
+			if character >= i && character <= end {
+				return "Str", true
+			}
+			i = end
+			continue
+		}
+		if (line[i] >= '0' && line[i] <= '9') && (i == 0 || (line[i-1] < 'a' || line[i-1] > 'z')) {
+			end := i + 1
+			for end < len(line) && ((line[end] >= '0' && line[end] <= '9') || line[end] == '.') {
+				end++
+			}
+			if character >= i && character <= end {
+				return "Number", true
+			}
+			i = end - 1
+		}
+	}
+	return "", false
+}
+
+func collectionLiteralAt(line string, character int) (string, bool) {
+	stack := []int{}
+	for i, ch := range line {
+		switch ch {
+		case '[', '{':
+			stack = append(stack, i)
+		case ']', '}':
+			if len(stack) == 0 {
+				continue
+			}
+			start := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if character >= start && character <= i {
+				if line[start] == '[' && ch == ']' {
+					return "List", true
+				}
+				if line[start] == '{' && ch == '}' {
+					return "Dict", true
+				}
+			}
+		}
+	}
+	return "", false
+}
+
+func literalType(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "[]" || (strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]")) {
+		return "List", true
+	}
+	if value == "{}" || (strings.HasPrefix(value, "{") && strings.HasSuffix(value, "}")) {
+		return "Dict", true
+	}
+	if len(value) >= 2 && ((value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'')) {
+		return "Str", true
+	}
+	if value == "true" || value == "false" {
+		return "Bool", true
+	}
+	if value == "null" {
+		return "null", true
+	}
+	if _, err := strconv.ParseFloat(strings.TrimSuffix(value, "f"), 64); err == nil {
+		return "Number", true
+	}
+	return "", false
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (s *Server) handleEmbeddedSignatureHelp(uri string, pos index.Position) (*index.SignatureHelp, bool, error) {
-	region, _, innerPos, ok := s.embeddedRegionAt(uri, pos)
+	region, owner, innerPos, ok := s.embeddedRegionAt(uri, pos)
 	if !ok {
 		return nil, false, nil
 	}
@@ -716,14 +969,100 @@ func (s *Server) handleEmbeddedSignatureHelp(uri string, pos index.Position) (*i
 	if !ok {
 		return nil, true, nil
 	}
+	if name, active, found := callAtPosition(region, innerPos); found {
+		if help := s.manager.BuildSignatureHelpForURI(name, uri); help != nil {
+			help.ActiveParameter = active
+			return help, true, nil
+		}
+		if owner != nil && owner.Name == name {
+			params := make([]index.ParameterInformation, 0, len(owner.Params))
+			for _, param := range owner.Params {
+				params = append(params, index.ParameterInformation{Label: param + ": " + owner.ParamTypes[param]})
+			}
+			return &index.SignatureHelp{Signatures: []index.SignatureInformation{{Label: owner.Name + owner.ArgsStr + " -> " + owner.ReturnType, Parameters: params}}, ActiveParameter: active}, true, nil
+		}
+	}
 	for _, match := range resolver.AllWords(line) {
 		if match.End <= innerPos.Character {
-			if help := s.manager.BuildSignatureHelp(match.Word); help != nil {
+			if help := s.manager.BuildSignatureHelpForURI(match.Word, uri); help != nil {
 				return help, true, nil
 			}
 		}
 	}
 	return nil, true, nil
+}
+
+func callAtPosition(region embeddedRegionView, pos index.Position) (string, int, bool) {
+	if pos.Line < 0 || pos.Line >= len(region.lines) {
+		return "", 0, false
+	}
+	prefix := strings.Join(region.lines[:pos.Line], "\n")
+	line := region.lines[pos.Line]
+	if pos.Character < len(line) {
+		line = line[:pos.Character]
+	}
+	prefix += line
+	stack := []int{}
+	var quote byte
+	for i := 0; i < len(prefix); i++ {
+		if quote != 0 {
+			if prefix[i] == quote && (i == 0 || prefix[i-1] != '\\') {
+				quote = 0
+			}
+			continue
+		}
+		if prefix[i] == '"' || prefix[i] == '\'' || prefix[i] == '`' {
+			quote = prefix[i]
+			continue
+		}
+		if prefix[i] == '(' {
+			stack = append(stack, i)
+		} else if prefix[i] == ')' && len(stack) > 0 {
+			stack = stack[:len(stack)-1]
+		}
+	}
+	if len(stack) == 0 {
+		return "", 0, false
+	}
+	open := stack[len(stack)-1]
+	depth := 0
+	commas := 0
+	quote = 0
+	for i := open; i < len(prefix); i++ {
+		if quote != 0 {
+			if prefix[i] == quote && (i == 0 || prefix[i-1] != '\\') {
+				quote = 0
+			}
+			continue
+		}
+		if prefix[i] == '"' || prefix[i] == '\'' || prefix[i] == '`' {
+			quote = prefix[i]
+			continue
+		}
+		switch prefix[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ',':
+			if depth == 1 {
+				commas++
+			}
+		}
+		if depth == 0 {
+			return "", 0, false
+		}
+	}
+	nameEnd := open
+	nameStart := nameEnd - 1
+	for nameStart >= 0 && (prefix[nameStart] == '_' || prefix[nameStart] >= 'a' && prefix[nameStart] <= 'z' || prefix[nameStart] >= 'A' && prefix[nameStart] <= 'Z' || prefix[nameStart] >= '0' && prefix[nameStart] <= '9') {
+		nameStart--
+	}
+	name := prefix[nameStart+1 : nameEnd]
+	if name == "" {
+		return "", 0, false
+	}
+	return name, commas, true
 }
 
 func (s *Server) validateEmbeddedAxon(uri, doc string) []index.Diagnostic {

@@ -28,6 +28,7 @@ type serializedVariant struct {
 	Doc           string              `json:"doc"`
 	ArgsStr       string              `json:"args_str"`
 	Params        []string            `json:"params"`
+	ParamTypes    map[string]string   `json:"param_types,omitempty"`
 	ReturnType    string              `json:"return_type,omitempty"`
 	Kind          int                 `json:"kind"`
 	Location      *serializedLocation `json:"location,omitempty"`
@@ -42,11 +43,25 @@ type serializedCache struct {
 	Functions map[string][]serializedVariant `json:"functions"`
 }
 
+func XetoSource(uri string) (string, bool) {
+	var sources map[string]string
+	if err := json.Unmarshal(EmbeddedXetoSources, &sources); err != nil {
+		return "", false
+	}
+	const prefix = "axon-ext:/"
+	if !strings.HasPrefix(uri, prefix) {
+		return "", false
+	}
+	content, ok := sources[strings.TrimPrefix(uri, prefix)]
+	return content, ok
+}
+
 type FunctionVariant struct {
 	Name          string
 	Doc           string
 	ArgsStr       string
 	Params        []string
+	ParamTypes    map[string]string
 	ReturnType    string
 	Kind          int
 	LocationURI   string
@@ -75,6 +90,7 @@ func LoadEmbeddedFunctions() (map[string][]FunctionVariant, error) {
 				Doc:           strings.TrimSpace(fn.Doc),
 				ArgsStr:       defaultArgs(fn.ArgsStr),
 				Params:        fn.Params,
+				ParamTypes:    fn.ParamTypes,
 				ReturnType:    strings.TrimSpace(fn.ReturnType),
 				Kind:          fn.Kind,
 				LocationURI:   deserializeLocationURI(fn.Location),
