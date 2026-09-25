@@ -2,14 +2,16 @@
   "name": "axon-lsp",
   "displayName": "Axon LSP (Project Haystack)",
   "description": "LSP and Syntax Highlighting for the Axon programming language",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "publisher": "mikeMelillo",
   "engines": {
     "vscode": "^1.80.0"
   },
   "activationEvents": [
+    "onLanguage:axon",
     "onLanguage:xeto",
-    "onLanguage:fantom"
+    "onLanguage:fantom",
+    "workspaceContains:**/*.{trio,axon,xeto,fan}"
   ],
   "categories": [
     "Programming Languages"
@@ -31,6 +33,13 @@
         "id": "fantom",
         "aliases": ["Fantom", "fantom"],
         "extensions": [".fan"]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "axon",
+        "scopeName": "source.axon",
+        "path": "./syntaxes/axon.tmLanguage.json"
       }
     ],
     "configuration": {
