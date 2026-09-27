@@ -478,6 +478,61 @@ func TestCallAtPositionTracksActiveArgument(t *testing.T) {
 	}
 }
 
+func TestAxonReferenceLiteralHasRefHoverType(t *testing.T) {
+	t.Parallel()
+	if got, ok := literalAt(`@lib::someRef`, 7); !ok || got != "Ref" {
+		t.Fatalf("expected reference literal hover type Ref, got %q ok=%t", got, ok)
+	}
+	if got, ok := literalType(`@lib::someRef`); !ok || got != "Ref" {
+		t.Fatalf("expected reference expression type Ref, got %q ok=%t", got, ok)
+	}
+}
+
+func TestHoverOnQualifiedReferenceTreatsItAsOneLiteral(t *testing.T) {
+	t.Parallel()
+	server := NewServer(bytes.NewReader(nil), &bytes.Buffer{})
+	manager, err := index.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.manager = manager
+	uri := "file:///workspace/ref.trio"
+	server.setDocument(uri, `value: @lib.name::block`)
+	params, _ := json.Marshal(hoverParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: index.Position{Line: 0, Character: 17}})
+	if err := server.handle(requestMessage{ID: json.RawMessage("1"), Method: "textDocument/hover", Params: params}); err != nil {
+		t.Fatal(err)
+	}
+	if out := server.writer.(*bytes.Buffer).String(); !strings.Contains(out, "`Ref`") {
+		t.Fatalf("expected hover on any part of qualified reference to report Ref, got %q", out)
+	}
+}
+
+func TestEmbeddedXetoHoverRecognizesFullQualifiedReference(t *testing.T) {
+	t.Parallel()
+	server := NewServer(bytes.NewReader(nil), &bytes.Buffer{})
+	manager, err := index.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.SetMode(index.ModeSpecs)
+	server.manager = manager
+	uri := "file:///workspace/ref.xeto"
+	line := `    value: @lib.name::block`
+	doc := "+Funcs {\n  refValue: Func { returns: Ref\n    <axon:---\n" + line + "\n    --->\n  }\n}"
+	server.setDocument(uri, doc)
+	for _, part := range []string{".", ":", "block"} {
+		character := strings.Index(line, "@lib") + strings.Index("lib.name::block", part)
+		server.writer = &bytes.Buffer{}
+		params, _ := json.Marshal(hoverParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: index.Position{Line: 3, Character: character}})
+		if err := server.handle(requestMessage{ID: json.RawMessage("1"), Method: "textDocument/hover", Params: params}); err != nil {
+			t.Fatal(err)
+		}
+		if out := server.writer.(*bytes.Buffer).String(); !strings.Contains(out, "`Ref`") {
+			t.Errorf("expected hover over %q within reference to report Ref, got %q", part, out)
+		}
+	}
+}
+
 func TestEmbeddedExpressionTypeUsesFinalChainedCall(t *testing.T) {
 	t.Parallel()
 	server := NewServer(bytes.NewReader(nil), &bytes.Buffer{})
@@ -582,14 +637,14 @@ src:
 func TestFoldingRangesDeduplicateOverlappingPairs(t *testing.T) {
 	t.Parallel()
 	server := NewServer(bytes.NewReader(nil), &bytes.Buffer{})
-	uri := "file:///workspace/overlap.axon"
-	server.setDocument(uri, "if (ok) do\n  read()\nend else null")
+	uri := "file:///workspace/overlap.trio"
+	server.setDocument(uri, "name: overlap\nfunc\nsrc:\n    if (ok) do\n      read()\n    end else null")
 	params, _ := json.Marshal(foldingRangeParams{TextDocument: textDocumentIdentifier{URI: uri}})
 	if err := server.handle(requestMessage{ID: json.RawMessage("1"), Method: "textDocument/foldingRange", Params: params}); err != nil {
 		t.Fatal(err)
 	}
 	out := server.writer.(*bytes.Buffer).String()
-	if strings.Count(out, `"startLine":0,"endLine":1`) != 1 {
+	if strings.Count(out, `"startLine":3,"endLine":4`) != 1 {
 		t.Fatalf("expected one deduplicated folding range, got %q", out)
 	}
 }

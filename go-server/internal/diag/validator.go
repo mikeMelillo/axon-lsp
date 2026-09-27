@@ -3,6 +3,7 @@ package diag
 import (
 	"strings"
 
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/axon"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/index"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/lexer"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/parser"
@@ -158,8 +159,8 @@ func validateCallArguments(uri string, lineNumber int, line string, manager *ind
 				continue
 			}
 			expected := fn.ParamTypes[fn.Params[paramIndex]]
-			expected, _ = optionalType(expected)
-			if expected == "" || expected == "Obj" || primitiveCompatible(actual, expected) {
+			expected, optional := optionalType(expected)
+			if expected == "" || expected == "Obj" || (actual == "None" && optional) || primitiveCompatible(actual, expected) {
 				continue
 			}
 			result = append(result, index.Diagnostic{Range: index.Range{Start: index.Position{Line: lineNumber, Character: word.End + 1 + arg.start}, End: index.Position{Line: lineNumber, Character: word.End + 1 + arg.end}}, Message: "Argument " + fn.Params[paramIndex] + " expects " + expected + "; received " + actual, Severity: 2})
@@ -275,6 +276,9 @@ func splitArguments(value string) []argumentRange {
 
 func primitiveArgumentType(value string) (string, bool) {
 	value = strings.TrimSpace(value)
+	if axon.IsRefLiteral(value) {
+		return "Ref", true
+	}
 	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
 		return "Str", true
 	}

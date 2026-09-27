@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/axon"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/cache"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/diag"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/index"
@@ -552,6 +553,10 @@ func (s *Server) handleHover(msg requestMessage) error {
 	if !ok || inComment {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
+	if axon.RefLiteralAt(line, params.Position.Character) {
+		hover := &index.Hover{Contents: index.MarkupContent{Kind: "markdown", Value: "**literal**: `Ref`"}}
+		return s.writeResponse(msg.ID, hover, nil)
+	}
 	if hover, handled, err := s.handleEmbeddedHover(params.TextDocument.URI, params.Position); handled {
 		serverLog.Printf("hover xeto dispatch uri=%s pos=%d:%d handled=%t", params.TextDocument.URI, params.Position.Line, params.Position.Character, true)
 		if err != nil {
@@ -940,6 +945,9 @@ func isIdentifierChar(ch byte) bool {
 }
 
 func literalAt(line string, character int) (string, bool) {
+	if axon.RefLiteralAt(line, character) {
+		return "Ref", true
+	}
 	if typeName, ok := collectionLiteralAt(line, character); ok {
 		return typeName, true
 	}
@@ -997,6 +1005,9 @@ func collectionLiteralAt(line string, character int) (string, bool) {
 
 func literalType(value string) (string, bool) {
 	value = strings.TrimSpace(value)
+	if axon.IsRefLiteral(value) {
+		return "Ref", true
+	}
 	if value == "[]" || (strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]")) {
 		return "List", true
 	}

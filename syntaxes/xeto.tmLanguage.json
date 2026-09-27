@@ -1,0 +1,49 @@
+{
+  "name": "Xeto",
+  "scopeName": "source.xeto",
+  "patterns": [
+    {
+      "include": "#embedded-axon"
+    },
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#references"
+    },
+    {
+      "include": "#strings"
+    }
+  ],
+  "repository": {
+    "embedded-axon": {
+      "name": "meta.embedded.block.axon",
+      "begin": "<axon:---",
+      "end": "--->",
+      "patterns": [
+        {
+          "include": "source.axon"
+        }
+      ]
+    },
+    "comments": {
+      "name": "comment.line.double-slash.xeto",
+      "match": "//.*$"
+    },
+    "references": {
+      "name": "constant.other.reference.xeto",
+      "match": "@[a-zA-Z0-9_.:~-]+"
+    },
+    "strings": {
+      "name": "string.quoted.double.xeto",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.xeto",
+          "match": "\\\\."
+        }
+      ]
+    }
+  }
+}

@@ -85,7 +85,7 @@ function startLanguageClient(context: ExtensionContext): void {
         },
         synchronize: {
             // Notify the server about file changes in the workspace
-            fileEvents: workspace.createFileSystemWatcher('**/{*.axon,*.trio,*.fan,*.xeto}')
+            fileEvents: workspace.createFileSystemWatcher('**/{*.trio,*.fan,*.xeto}')
         },
         outputChannel: outputChannel,
         traceOutputChannel: window.createOutputChannel('Axon LSP Trace'),

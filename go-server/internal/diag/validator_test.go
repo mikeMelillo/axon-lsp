@@ -74,6 +74,37 @@ func TestXetoOptionalArgumentMayBeOmitted(t *testing.T) {
 	}
 }
 
+func TestOptionalTypedArgumentAcceptsNullPlaceholder(t *testing.T) {
+	t.Parallel()
+	mgr := testXetoManager(t, `+Funcs {
+  func: Func { options: Dict?, count: Number, label: Str }
+}`)
+	if diagnostics := Validate("file:///test.xeto", `func(null, 2, "item")`, mgr); len(diagnostics) != 0 {
+		t.Fatalf("nullable optional slot should accept null before later positional arguments: %#v", diagnostics)
+	}
+	if diagnostics := Validate("file:///test.xeto", `func("bad", 2, "item")`, mgr); len(diagnostics) != 1 || diagnostics[0].Message != "Argument options expects Dict; received Str" {
+		t.Fatalf("optional slot should still reject incompatible non-null values: %#v", diagnostics)
+	}
+}
+
+func TestReferenceLiteralIsGenericRefArgumentType(t *testing.T) {
+	t.Parallel()
+	mgr := testXetoManager(t, `+Funcs {
+  acceptRef: Func { value: Ref }
+  acceptObj: Func { value: Obj }
+  acceptNumber: Func { value: Number }
+}`)
+	for _, source := range []string{`acceptRef(@someRef)`, `acceptObj(@someRef)`, `acceptRef(@lib::someRef)`} {
+		if diagnostics := Validate("file:///test.xeto", source, mgr); len(diagnostics) != 0 {
+			t.Errorf("generic Ref literal should be accepted for %q: %#v", source, diagnostics)
+		}
+	}
+	diagnostics := Validate("file:///test.xeto", `acceptNumber(@someRef)`, mgr)
+	if len(diagnostics) != 1 || diagnostics[0].Message != "Argument value expects Number; received Ref" {
+		t.Fatalf("expected generic reference type mismatch, got %#v", diagnostics)
+	}
+}
+
 func TestMissingArgumentWarningsCanBeDisabledWithoutDisablingOtherChecks(t *testing.T) {
 	t.Parallel()
 	mgr := testXetoManager(t, `+Funcs {

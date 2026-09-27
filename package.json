@@ -2,7 +2,7 @@
   "name": "axon-lsp",
   "displayName": "Axon LSP (Project Haystack)",
   "description": "LSP and Syntax Highlighting for the Axon programming language",
-  "version": "0.3.5.1",
+  "version": "0.3.6",
   "publisher": "mikeMelillo",
   "engines": {
     "vscode": "^1.80.0"
@@ -24,7 +24,7 @@
       {
         "id": "axon",
         "aliases": ["Axon", "axon"],
-        "extensions": [".axon", ".trio"],
+        "extensions": [".trio"],
         "configuration": "./language-configuration.json"
       },
       {
@@ -43,6 +43,11 @@
         "language": "axon",
         "scopeName": "source.axon",
         "path": "./syntaxes/axon.tmLanguage.json"
+      },
+      {
+        "language": "xeto",
+        "scopeName": "source.xeto",
+        "path": "./syntaxes/xeto.tmLanguage.json"
       }
     ],
     "configuration": {
@@ -51,7 +56,7 @@
         "axonLsp.haxallPaths": {
           "type": "array",
           "default": [],
-          "description": "Paths to Haxall installation directories or clone roots. Scanned recursively up to 4 directory levels for .trio, .axon, and .fan sources."
+          "description": "Paths to Haxall installation directories or clone roots. Scanned recursively up to 4 directory levels for .trio and .fan sources."
         },
         "axonLsp.externalPaths": {
           "type": "array",
