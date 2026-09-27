@@ -30,7 +30,8 @@
       {
         "id": "xeto",
         "aliases": ["Xeto", "xeto"],
-        "extensions": [".xeto"]
+        "extensions": [".xeto"],
+        "configuration": "./language-configuration.json"
       },
       {
         "id": "fantom",
