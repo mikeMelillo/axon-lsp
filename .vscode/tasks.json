@@ -5,12 +5,22 @@
             "label": "build-dev",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "npm: build:server",
-                "npm: watch"
+                "build-server-dev",
+                "watch-client"
             ],
             "problemMatcher": []
         },
         {
+            "label": "build-server-dev",
+            "type": "npm",
+            "script": "build:server:dev",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "never"
+            }
+        },
+        {
+            "label": "watch-client",
             "type": "npm",
             "script": "watch",
             "problemMatcher": "$tsc-watch",
@@ -24,9 +34,13 @@
             }
         },
         {
+            "label": "build-server",
             "type": "npm",
             "script": "build:server",
-            "problemMatcher": []
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "never"
+            }
         }
     ]
 }

@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { workspace, ExtensionContext, window, commands, env, Uri } from 'vscode';
+import { workspace, ExtensionContext, ExtensionMode, window, commands, env, Uri, TextDocument } from 'vscode';
 import {
     LanguageClient,
     LanguageClientOptions,
@@ -8,9 +8,43 @@ import {
     TransportKind
 } from 'vscode-languageclient/node';
 
-let client: LanguageClient;
+let client: LanguageClient | undefined;
 
 export function activate(context: ExtensionContext) {
+    // The development host should be useful immediately, even when VS Code
+    // restores an unrelated editor instead of an Axon document. In normal use
+    // keep the language server lazy and start it when the first Axon-family
+    // document is opened.
+    if (context.extensionMode !== ExtensionMode.Development && !hasAxonDocumentOpen()) {
+        const listener = workspace.onDidOpenTextDocument(document => {
+            if (!isAxonDocument(document)) {
+                return;
+            }
+            listener.dispose();
+            startLanguageClient(context);
+        });
+        context.subscriptions.push(listener);
+        return;
+    }
+
+    startLanguageClient(context);
+}
+
+function hasAxonDocumentOpen(): boolean {
+    return workspace.textDocuments.some(isAxonDocument)
+        || (window.activeTextEditor !== undefined && isAxonDocument(window.activeTextEditor.document));
+}
+
+function isAxonDocument(document: TextDocument): boolean {
+    return ['axon', 'xeto', 'fantom'].includes(document.languageId)
+        || /\.(axon|trio|xeto|fan)$/i.test(document.uri.path);
+}
+
+function startLanguageClient(context: ExtensionContext): void {
+    if (client) {
+        return;
+    }
+
     // 1. Create the output channel immediately so it appears in the dropdown
     const outputChannel = window.createOutputChannel('Axon Language Server');
     outputChannel.appendLine('Axon Extension Activating...');
@@ -60,18 +94,19 @@ export function activate(context: ExtensionContext) {
     };
 
     // 5. Create and start the client
-    client = new LanguageClient(
+    const languageClient = new LanguageClient(
         'axonLspClient',
         'Axon Language Server',
         serverOptions,
         clientOptions
     );
+    client = languageClient;
     outputChannel.appendLine('Starting Language Client...');
-    const clientReady = client.start();
+    const clientReady = languageClient.start();
     context.subscriptions.push(workspace.registerTextDocumentContentProvider('axon-ext', {
         provideTextDocumentContent: async uri => {
             await clientReady;
-            return client.sendRequest<string>('axonLsp/embeddedDocument', { uri: uri.toString() });
+            return languageClient.sendRequest<string>('axonLsp/embeddedDocument', { uri: uri.toString() });
         }
     }));
 
@@ -88,7 +123,7 @@ export function activate(context: ExtensionContext) {
         if (!previousSettings.indexAllWorkspaceFolders && settings.indexAllWorkspaceFolders) {
             logWorkspaceIndexWarning(outputChannel, true);
         }
-        void client.sendNotification('workspace/didChangeConfiguration', {
+        void languageClient.sendNotification('workspace/didChangeConfiguration', {
             settings
         });
     }));
@@ -110,6 +145,7 @@ interface ServerSettings {
     externalPaths: string[];
     indexAllWorkspaceFolders: boolean;
     mode: string;
+    warnMissingArguments: boolean;
 }
 
 function getServerSettings(): ServerSettings {
@@ -119,7 +155,8 @@ function getServerSettings(): ServerSettings {
         haxallPaths: normalizeConfiguredPaths(config.get<string[]>('haxallPaths', []), workspaceRoot),
         externalPaths: normalizeConfiguredPaths(config.get<string[]>('externalPaths', []), workspaceRoot),
         indexAllWorkspaceFolders: config.get<boolean>('indexAllWorkspaceFolders', false),
-        mode: config.get<string>('mode', 'auto')
+        mode: config.get<string>('mode', 'auto'),
+        warnMissingArguments: config.get<boolean>('warnMissingArguments', true)
     };
 }
 

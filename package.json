@@ -7,11 +7,14 @@
   "engines": {
     "vscode": "^1.80.0"
   },
+  "extensionKind": [
+    "workspace"
+  ],
   "activationEvents": [
     "onLanguage:axon",
     "onLanguage:xeto",
     "onLanguage:fantom",
-    "workspaceContains:**/*.{trio,axon,xeto,fan}"
+    "onStartupFinished"
   ],
   "categories": [
     "Programming Languages"
@@ -66,6 +69,11 @@
           "enum": ["auto", "defs", "specs"],
           "default": "auto",
           "description": "Choose whether bundled function metadata prefers legacy defs, newer specs, or decides automatically based on future workspace support."
+        },
+        "axonLsp.warnMissingArguments": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show diagnostics when a function call omits required arguments."
         }
       }
     },
@@ -83,6 +91,7 @@
     "watch": "tsc -watch -p ./client",
     "postinstall": "npm install --prefix client",
     "build:server": "node ./scripts/build-go.mjs",
+    "build:server:dev": "node ./scripts/build-go.mjs --host",
     "build:cache": "node ./scripts/build-cache.mjs",
     "test:go": "sh -c 'cd go-server && go test ./...'",
     "bench:go": "sh -c 'cd go-server && go test -run ^$ -bench . -benchmem ./internal/index'",

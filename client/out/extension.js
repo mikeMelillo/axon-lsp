@@ -41,6 +41,35 @@ const vscode_1 = require("vscode");
 const node_1 = require("vscode-languageclient/node");
 let client;
 function activate(context) {
+    // The development host should be useful immediately, even when VS Code
+    // restores an unrelated editor instead of an Axon document. In normal use
+    // keep the language server lazy and start it when the first Axon-family
+    // document is opened.
+    if (context.extensionMode !== vscode_1.ExtensionMode.Development && !hasAxonDocumentOpen()) {
+        const listener = vscode_1.workspace.onDidOpenTextDocument(document => {
+            if (!isAxonDocument(document)) {
+                return;
+            }
+            listener.dispose();
+            startLanguageClient(context);
+        });
+        context.subscriptions.push(listener);
+        return;
+    }
+    startLanguageClient(context);
+}
+function hasAxonDocumentOpen() {
+    return vscode_1.workspace.textDocuments.some(isAxonDocument)
+        || (vscode_1.window.activeTextEditor !== undefined && isAxonDocument(vscode_1.window.activeTextEditor.document));
+}
+function isAxonDocument(document) {
+    return ['axon', 'xeto', 'fantom'].includes(document.languageId)
+        || /\.(axon|trio|xeto|fan)$/i.test(document.uri.path);
+}
+function startLanguageClient(context) {
+    if (client) {
+        return;
+    }
     // 1. Create the output channel immediately so it appears in the dropdown
     const outputChannel = vscode_1.window.createOutputChannel('Axon Language Server');
     outputChannel.appendLine('Axon Extension Activating...');
@@ -87,13 +116,14 @@ function activate(context) {
         // them for Ctrl-hover as well as explicit navigation commands.
     };
     // 5. Create and start the client
-    client = new node_1.LanguageClient('axonLspClient', 'Axon Language Server', serverOptions, clientOptions);
+    const languageClient = new node_1.LanguageClient('axonLspClient', 'Axon Language Server', serverOptions, clientOptions);
+    client = languageClient;
     outputChannel.appendLine('Starting Language Client...');
-    const clientReady = client.start();
+    const clientReady = languageClient.start();
     context.subscriptions.push(vscode_1.workspace.registerTextDocumentContentProvider('axon-ext', {
         provideTextDocumentContent: async (uri) => {
             await clientReady;
-            return client.sendRequest('axonLsp/embeddedDocument', { uri: uri.toString() });
+            return languageClient.sendRequest('axonLsp/embeddedDocument', { uri: uri.toString() });
         }
     }));
     clientReady.catch(err => {
@@ -108,7 +138,7 @@ function activate(context) {
         if (!previousSettings.indexAllWorkspaceFolders && settings.indexAllWorkspaceFolders) {
             logWorkspaceIndexWarning(outputChannel, true);
         }
-        void client.sendNotification('workspace/didChangeConfiguration', {
+        void languageClient.sendNotification('workspace/didChangeConfiguration', {
             settings
         });
     }));
@@ -128,7 +158,8 @@ function getServerSettings() {
         haxallPaths: normalizeConfiguredPaths(config.get('haxallPaths', []), workspaceRoot),
         externalPaths: normalizeConfiguredPaths(config.get('externalPaths', []), workspaceRoot),
         indexAllWorkspaceFolders: config.get('indexAllWorkspaceFolders', false),
-        mode: config.get('mode', 'auto')
+        mode: config.get('mode', 'auto'),
+        warnMissingArguments: config.get('warnMissingArguments', true)
     };
 }
 function logWorkspaceIndexWarning(outputChannel, enabled) {

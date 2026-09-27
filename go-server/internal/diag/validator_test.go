@@ -1,6 +1,7 @@
 package diag
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/index"
@@ -50,6 +51,86 @@ func TestReportsUndefinedSimpleArgument(t *testing.T) {
 	if !found {
 		t.Fatalf("expected undefined variable diagnostic, got %#v", diagnostics)
 	}
+}
+
+func TestXetoPipeReceiverOccupiesFirstArgument(t *testing.T) {
+	t.Parallel()
+	mgr := testXetoManager(t, `+Funcs {
+  func: Func { receiver: Number, value: Number }
+}`)
+	diagnostics := Validate("file:///test.xeto", `foo.func("bad")`, mgr)
+	if len(diagnostics) != 1 || diagnostics[0].Message != "Argument value expects Number; received Str" {
+		t.Fatalf("expected explicit argument to bind to second slot, got %#v", diagnostics)
+	}
+}
+
+func TestXetoOptionalArgumentMayBeOmitted(t *testing.T) {
+	t.Parallel()
+	mgr := testXetoManager(t, `+Funcs {
+  func: Func { required: Obj, optional: Obj? }
+}`)
+	if diagnostics := Validate("file:///test.xeto", `func(null)`, mgr); len(diagnostics) != 0 {
+		t.Fatalf("optional trailing slot should not be required: %#v", diagnostics)
+	}
+}
+
+func TestMissingArgumentWarningsCanBeDisabledWithoutDisablingOtherChecks(t *testing.T) {
+	t.Parallel()
+	mgr := testXetoManager(t, `+Funcs {
+  required: Func { value: Number }
+}`)
+	diagnostics := ValidateWithMissingArgumentWarnings("file:///test.xeto", `required("bad")`, mgr, false)
+	if len(diagnostics) != 1 || diagnostics[0].Message != "Argument value expects Number; received Str" {
+		t.Fatalf("expected type mismatch to remain while missing-argument warning is disabled: %#v", diagnostics)
+	}
+	diagnostics = ValidateWithMissingArgumentWarnings("file:///test.xeto", `required()`, mgr, false)
+	for _, diagnostic := range diagnostics {
+		if strings.HasPrefix(diagnostic.Message, "Missing required arguments:") {
+			t.Fatalf("did not expect missing-argument diagnostic when disabled: %#v", diagnostics)
+		}
+	}
+}
+
+func TestInlineFunctionParametersAreScopedUnknowns(t *testing.T) {
+	t.Parallel()
+	mgr := testXetoManager(t, `+Funcs {
+  use: Func { value: Obj, fn: Func }
+  inspect: Func { value: Obj }
+}`)
+	for _, source := range []string{
+		`grid.use(x => inspect(x))`,
+		`grid.use x => inspect(x)`,
+		`grid.use(x, y => inspect(x))`,
+		`grid.use((x, y) => inspect(y))`,
+	} {
+		if diagnostics := Validate("file:///test.xeto", source, mgr); len(diagnostics) != 0 {
+			t.Errorf("inline function variables should be defined for %q: %#v", source, diagnostics)
+		}
+	}
+}
+
+func TestPreviouslyAssignedVariableIsInScopeForCallArguments(t *testing.T) {
+	t.Parallel()
+	mgr := testXetoManager(t, `+Funcs {
+  replace: Func { receiver: Obj, old: Str, new: Str }
+}`)
+	for _, declaration := range []string{`labels = "abcd"`, `labels: "abcd"`} {
+		source := declaration + "\nx = x.replace(\"{{label}}\", labels)"
+		if diagnostics := Validate("file:///test.xeto", source, mgr); len(diagnostics) != 0 {
+			t.Errorf("previously declared variable should be recognized in call (%q): %#v", declaration, diagnostics)
+		}
+	}
+}
+
+func testXetoManager(t *testing.T, declarations string) *index.Manager {
+	t.Helper()
+	mgr, err := index.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr.SetMode(index.ModeSpecs)
+	mgr.UpdateDocument("file:///workspace/funcs.xeto", "+Funcs {\n"+strings.TrimPrefix(declarations, "+Funcs {\n"))
+	return mgr
 }
 
 func TestIgnoresFunctionParameters(t *testing.T) {

@@ -283,6 +283,35 @@ func TestEmbeddedXetoDiagnosticsMapToOuterDocument(t *testing.T) {
 	}
 }
 
+func TestEmbeddedXetoParametersAndReadFilterAreNotUndefinedVariables(t *testing.T) {
+	t.Parallel()
+	server := NewServer(bytes.NewReader(nil), &bytes.Buffer{})
+	manager, err := index.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.SetMode(index.ModeSpecs)
+	server.manager = manager
+	uri := "file:///workspace/scoped.xeto"
+	doc := `+Funcs {
+  check: Func { a: Obj, b: Obj, c: Obj }
+  runTest: Func { server: Obj, point: Obj, inputSpan: Obj, inputTest: Obj, opts: Obj?
+    <axon:---
+    testParams: check(inputTest, server, opts)
+    sysHealthMeta: read(sysHealthMeta)
+    --->
+  }
+}`
+	server.setDocument(uri, doc)
+	manager.UpdateDocument(uri, doc)
+	if err := server.publishDiagnostics(uri); err != nil {
+		t.Fatal(err)
+	}
+	if out := server.writer.(*bytes.Buffer).String(); strings.Contains(out, "Undefined variable: inputTest") || strings.Contains(out, "Undefined variable: server") || strings.Contains(out, "Undefined variable: opts") || strings.Contains(out, "Undefined variable: sysHealthMeta") {
+		t.Fatalf("did not expect false undefined-variable diagnostics, got %q", out)
+	}
+}
+
 func TestEmbeddedXetoCommentsDoNotProduceDiagnosticsOrCompletions(t *testing.T) {
 	t.Parallel()
 	server := NewServer(bytes.NewReader(nil), &bytes.Buffer{})

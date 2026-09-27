@@ -1,6 +1,6 @@
 # Axon Language Server (axon-lsp)
 
-> **POC Notice**: This extension was built with AI assistance and is still evolving quickly. Use it, kick the tires, and expect a few rough edges along the way.
+> **0.3.5 Update**: The extension has gone through some serious updates from 0.1->0.3, namely a complete rewrite in Golang. The extension no longer has any external dependencies (python, libs, etc.). It has been primarily driven on Linux & Windows, but the binaries are also available for MacOS
 
 A VS Code extension that provides Language Server Protocol support for the Axon programming language used in SkySpark and Haxall.
 
@@ -19,6 +19,10 @@ This project is still very much a practical tool built in the open. The near-ter
 
 ## Installation
 
+### From Marketplace (recommended)
+
+[Marketplace Install](https://marketplace.visualstudio.com/items?itemName=mikeMelillo.axon-lsp)
+
 ### From Source
 
 ```bash
@@ -35,16 +39,9 @@ npm run package
 code --install-extension build/axon-lsp-<version>.vsix
 ```
 
-### From Marketplace
-
-[Marketplace Install](https://marketplace.visualstudio.com/items?itemName=mikeMelillo.axon-lsp)
-
 ## Requirements
 
 - VS Code 1.80+
-- No external Python or pip dependencies required
-    - Python server removed as part of v0.2.0
-    - This causes the extension static size to be much larger (~700kB -> 13MB), but the server no longer has external install dependencies
 
 The language server is bundled as a platform-specific Go binary inside the extension for:
 
@@ -96,14 +93,47 @@ npm run build:cache
 # Compile the extension and all Go server binaries
 npm run build:all
 
+# Compile the extension and only this machine's Go server binary
+npm run build:server:dev
+
 # Package a full VSIX in ./build
 npm run package
 ```
 
 ### Local Debugging
 
-- `Run Extension` in `.vscode/launch.json` builds the Go server first, then starts the TypeScript watch task.
-- You can override the binary used at runtime with `AXON_LSP_SERVER_PATH` if you want to point the extension at a custom local build.
+Press <kbd>F5</kbd>, or pick the `Run Extension` configuration in `.vscode/launch.json`. Its `build-dev` pre-launch task runs two steps in sequence:
+
+| Task | Script | What it does |
+| --- | --- | --- |
+| `build-server-dev` | `npm run build:server:dev` | Builds **only** the Go binary this machine can run |
+| `watch-client` | `npm run watch` | `tsc -watch`; also the default build task, so <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> recompiles as you edit |
+
+`build:server:dev` passes `--host` to `scripts/build-go.mjs`, which skips the five cross-compiled targets you can't run locally. The saving is small once Go's build cache is warm, but the first build after a reboot is where it pays:
+
+| | All 6 targets | Host only |
+| --- | --- | --- |
+| Warm cache | ~1.1s | ~0.7s |
+| Cold cache | ~44s | ~8s |
+
+Keep using `build:server` (all six) for packaging: `build:all`, `package`, and `publish` all depend on it, and the VSIX has to ship a binary for every platform.
+
+The manifest pins this extension to the `workspace` host so its Go server runs beside the workspace (including over SSH). The debug launch opens `test/file.trio` and the extension starts its language client immediately in Development mode, even if the host restores another editor. Outside Development mode, the extension stays lazy: it starts the client when the first Axon, Xeto, or Fantom document is opened. The `Axon Language Server` output channel should therefore appear immediately in the debug host; its `Using server binary:` line should point into this checkout's `bin/` directory.
+
+You can override the binary used at runtime with `AXON_LSP_SERVER_PATH` if you want to point the extension at a custom local build.
+
+#### If your edits seem to do nothing
+
+The Extension Development Host will happily run an **installed** copy of `mikeMelillo.axon-lsp` instead of your working tree — a VSIX you side-loaded, or the published build, since both share the extension ID. The extension still activates and serves requests, so it looks healthy, but it is running a frozen snapshot and none of your edits reach it.
+
+Check the `Axon Language Server` output channel and read the second line:
+
+```text
+Axon Extension Activating...
+Using server binary: /path/to/axon-lsp/bin/axon-lsp-linux-x64
+```
+
+If that path points inside `~/.vscode-server/extensions/` (remote) or `~/.vscode/extensions/` (local), the dev host is not running your code. Disable the installed copy — Extensions view → `axon-lsp` → gear → **Disable** — or uninstall it, then reload the window. Clients that sync extensions can reinstall it, so re-check this if the symptom comes back.
 
 ## Roadmap
 

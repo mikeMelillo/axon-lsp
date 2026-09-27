@@ -131,6 +131,9 @@ func (s *Server) handle(msg requestMessage) error {
 				s.manager.SetExtraRoots(scanRootsFromSettings(params.Settings))
 				s.reapplyOpenDocuments()
 			}
+			if err := s.publishOpenDiagnostics(); err != nil {
+				return err
+			}
 		}
 		return nil
 	case "workspace/didChangeWorkspaceFolders":
@@ -732,7 +735,7 @@ func (s *Server) publishDiagnostics(uri string) error {
 	if !ok {
 		return nil
 	}
-	diagnostics := diag.Validate(uri, doc, s.manager)
+	diagnostics := diag.ValidateWithMissingArgumentWarnings(uri, doc, s.manager, s.warnMissingArguments())
 	if strings.HasSuffix(pathFromURI(uri), ".xeto") {
 		diagnostics = s.validateEmbeddedAxon(uri, doc)
 	}
@@ -1085,7 +1088,7 @@ func (s *Server) validateEmbeddedAxon(uri, doc string) []index.Diagnostic {
 			continue
 		}
 		serverLog.Printf("diagnostics xeto validate fn=%s uri=%s region=%d:%d", fn.Name, uri, fn.Embedded.StartLine, fn.Embedded.EndLine)
-		diagnostics := diag.ValidateRegion(uri, fn.Embedded.Text, s.manager, first)
+		diagnostics := diag.ValidateRegionWithScope(uri, fn.Embedded.Text, s.manager, first, s.warnMissingArguments(), fn.Params)
 		first = false
 		for _, d := range diagnostics {
 			all = append(all, mapEmbeddedDiagnostic(fn.Embedded, d))
@@ -1095,6 +1098,25 @@ func (s *Server) validateEmbeddedAxon(uri, doc string) []index.Diagnostic {
 		s.manager.ClearReferencesForURI(uri)
 	}
 	return all
+}
+
+func (s *Server) warnMissingArguments() bool {
+	return s.settings.WarnMissingArguments == nil || *s.settings.WarnMissingArguments
+}
+
+func (s *Server) publishOpenDiagnostics() error {
+	s.documentsMu.RLock()
+	uris := make([]string, 0, len(s.documents))
+	for uri := range s.documents {
+		uris = append(uris, uri)
+	}
+	s.documentsMu.RUnlock()
+	for _, uri := range uris {
+		if err := s.publishDiagnostics(uri); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type embeddedRegionView struct {

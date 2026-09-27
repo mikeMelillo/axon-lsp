@@ -41,6 +41,7 @@ type settingsPayload struct {
 	ExternalPaths            []string `json:"externalPaths"`
 	IndexAllWorkspaceFolders bool     `json:"indexAllWorkspaceFolders"`
 	Mode                     string   `json:"mode"`
+	WarnMissingArguments     *bool    `json:"warnMissingArguments"`
 }
 
 type didChangeWorkspaceFoldersParams struct {
