@@ -1,6 +1,8 @@
 package diag
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -74,6 +76,30 @@ func TestCapitalizedArgumentResolvesAgainstIndexedSpecsAfterLocals(t *testing.T)
 	diagnostics := Validate(uri, `spec(UnknownSpec)`, mgr)
 	if len(diagnostics) != 1 || diagnostics[0].Message != "Undefined variable: UnknownSpec" {
 		t.Fatalf("unknown capitalized name should remain undefined: %#v", diagnostics)
+	}
+}
+
+func TestCapitalizedArgumentResolvesSpecDeclaredInSiblingXetoFile(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeXeto := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeXeto("specs.xeto", "FooBar: Dict\n")
+	writeXeto("funcs.xeto", "+Funcs {\n  spec: Func { name: Obj }\n}\n")
+
+	mgr, err := index.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr.SetMode(index.ModeSpecs)
+	mgr.SetWorkspaceRoots([]index.ScanRoot{{Path: root, Kind: index.ScanRootWorkspace}})
+	uri := "file://" + filepath.ToSlash(filepath.Join(root, "caller.xeto"))
+	if diagnostics := Validate(uri, `spec(FooBar)`, mgr); len(diagnostics) != 0 {
+		t.Fatalf("Spec from a sibling Xeto file should resolve outside any embedded Axon body: %#v", diagnostics)
 	}
 }
 
