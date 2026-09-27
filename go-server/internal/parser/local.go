@@ -23,7 +23,6 @@ func ParseLocalFunctions(source string) (map[string]struct{}, map[int]map[string
 	currentParams := map[string]struct{}{}
 	scopeStart := -1
 	funcIndent := 0
-	braceDepth := 0
 	inIgnoredField := false
 
 	for i, line := range lines {
@@ -63,18 +62,6 @@ func ParseLocalFunctions(source string) (map[string]struct{}, map[int]map[string
 			}
 		}
 
-		if braceDepth == 0 {
-			if name := parseVariableName(noComment); name != "" && !containsQuote(noComment) {
-				localFuncs[name] = struct{}{}
-			}
-		}
-
-		if !containsQuote(noComment) {
-			braceDepth += strings.Count(noComment, "{") - strings.Count(noComment, "}")
-			if braceDepth < 0 {
-				braceDepth = 0
-			}
-		}
 	}
 
 	if scopeStart >= 0 {
@@ -118,24 +105,6 @@ func parseParamSet(params string) map[string]struct{} {
 	}
 	flush(params[start:])
 	return result
-}
-
-func parseVariableName(line string) string {
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return ""
-	}
-	idx := strings.Index(line, ":")
-	if idx <= 0 {
-		return ""
-	}
-	name := strings.TrimSpace(line[:idx])
-	for _, r := range name {
-		if !(r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
-			return ""
-		}
-	}
-	return name
 }
 
 func cloneSet(input map[string]struct{}) map[string]struct{} {

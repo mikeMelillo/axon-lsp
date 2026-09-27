@@ -21,6 +21,7 @@ import (
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/lexer"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/parser"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/resolver"
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/scope"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/trio"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/xeto"
 )
@@ -775,27 +776,29 @@ func (s *Server) handleEmbeddedHover(uri string, pos index.Position) (*index.Hov
 		return nil, true, nil
 	}
 	if fn != nil {
-		if typeName, found := fn.ParamTypes[match.Word]; found {
-			return &index.Hover{Contents: index.MarkupContent{Kind: "markdown", Value: fmt.Sprintf("**%s**: `%s`\n\nParameter of `%s`.", match.Word, typeName, fn.Name)}}, true, nil
-		}
-		if typeName, source, found := s.embeddedLocalType(uri, region, innerPos.Line, match.Word, fn); found {
-			return &index.Hover{Contents: index.MarkupContent{Kind: "markdown", Value: fmt.Sprintf("**%s**: `%s`\n\nInferred from %s.", match.Word, typeName, source)}}, true, nil
+		if binding, found := embeddedScopeModel(region, fn).Resolve(match.Word, innerPos.Line); found {
+			if binding.Type != "" {
+				return &index.Hover{Contents: index.MarkupContent{Kind: "markdown", Value: fmt.Sprintf("**%s**: `%s`\n\nParameter of `%s`.", match.Word, binding.Type, fn.Name)}}, true, nil
+			}
+			if binding.Parameter {
+				return &index.Hover{Contents: index.MarkupContent{Kind: "markdown", Value: fmt.Sprintf("**%s**: `unknown`\n\nScoped function parameter.", match.Word)}}, true, nil
+			}
+			if typeName, source, inferred := s.embeddedLocalType(uri, region, innerPos.Line, match.Word, fn); inferred {
+				return &index.Hover{Contents: index.MarkupContent{Kind: "markdown", Value: fmt.Sprintf("**%s**: `%s`\n\nInferred from %s.", match.Word, typeName, source)}}, true, nil
+			}
 		}
 	}
 	return s.manager.BuildHoverForURI(match.Word, uri), true, nil
 }
 
 func (s *Server) embeddedLocalType(uri string, region embeddedRegionView, lineNumber int, name string, owner *xeto.ParsedFunction) (string, string, bool) {
-	for i := min(lineNumber, len(region.lines)-1); i >= 0; i-- {
-		line := strings.TrimSpace(region.lines[i])
-		colon := strings.Index(line, ":")
-		if colon <= 0 || strings.TrimSpace(line[:colon]) != name {
-			continue
-		}
-		rhs := strings.TrimSpace(line[colon+1:])
-		if typeName, ok := s.embeddedExpressionType(uri, region, i, rhs, owner); ok {
-			return typeName, "the expression", true
-		}
+	model := embeddedScopeModel(region, owner)
+	binding, ok := model.Resolve(name, lineNumber)
+	if !ok || binding.Parameter || binding.Line < 0 {
+		return "", "", false
+	}
+	if typeName, ok := s.embeddedExpressionType(uri, region, binding.Line, binding.Expression, owner); ok {
+		return typeName, "the expression", true
 	}
 	return "", "", false
 }
@@ -821,21 +824,24 @@ func (s *Server) embeddedExpressionType(uri string, region embeddedRegionView, l
 			return owner.ReturnType, true
 		}
 	}
-	for i := min(lineNumber, len(region.lines)-1); i >= 0; i-- {
-		line := strings.TrimSpace(region.lines[i])
-		colon := strings.Index(line, ":")
-		if colon > 0 && strings.TrimSpace(line[:colon]) == expression {
-			if typ, ok := s.embeddedExpressionType(uri, region, i, strings.TrimSpace(line[colon+1:]), owner); ok {
-				return typ, true
-			}
+	model := embeddedScopeModel(region, owner)
+	if binding, ok := model.Resolve(expression, lineNumber); ok {
+		if binding.Type != "" {
+			return binding.Type, true
 		}
-	}
-	if owner != nil {
-		if typ, ok := owner.ParamTypes[expression]; ok {
-			return typ, true
+		if binding.Expression != "" && binding.Line >= 0 && binding.Line != lineNumber {
+			return s.embeddedExpressionType(uri, region, binding.Line, binding.Expression, owner)
 		}
 	}
 	return "", false
+}
+
+func embeddedScopeModel(region embeddedRegionView, owner *xeto.ParsedFunction) *scope.Model {
+	var params map[string]string
+	if owner != nil {
+		params = owner.ParamTypes
+	}
+	return scope.Analyze(strings.Join(region.lines, "\n"), params)
 }
 
 func expressionCallName(expression string) (string, bool) {

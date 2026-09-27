@@ -12,6 +12,7 @@ import (
 
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/cache"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/index"
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/xeto"
 )
 
 func TestHandleCodeActionAddsLspIgnoreQuickFix(t *testing.T) {
@@ -496,6 +497,26 @@ func TestEmbeddedExpressionTypeUsesFinalChainedCall(t *testing.T) {
 	typeName, ok := server.embeddedExpressionType("file:///workspace/test.xeto", view, 0, expression, nil)
 	if !ok || typeName != "Obj?" {
 		t.Fatalf("expected outer findAll return type Obj?, not lambda predicate type: got %q ok=%t", typeName, ok)
+	}
+}
+
+func TestEmbeddedLocalHoverResolvesOuterLambdaInitializer(t *testing.T) {
+	t.Parallel()
+	server := NewServer(bytes.NewReader(nil), &bytes.Buffer{})
+	manager, err := index.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.manager = manager
+	body := `targetEvents: server.eventRead((now()-(longestDebounce+5min))..now()).findAll(e=> e.is(snapshotSpec) and e["testSpec"] == testSpec)
+inspect(targetEvents)`
+	view := embeddedRegionView{lines: strings.Split(body, "\n")}
+	owner := &xeto.ParsedFunction{ParamTypes: map[string]string{
+		"server": "Obj", "longestDebounce": "Number", "snapshotSpec": "Obj", "testSpec": "Obj",
+	}}
+	typeName, _, ok := server.embeddedLocalType("file:///workspace/test.xeto", view, 1, "targetEvents", owner)
+	if !ok || typeName != "Obj?" {
+		t.Fatalf("expected targetEvents hover to use the outer findAll result type, got %q ok=%t", typeName, ok)
 	}
 }
 

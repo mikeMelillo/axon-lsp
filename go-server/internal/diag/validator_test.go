@@ -146,12 +146,22 @@ func TestLambdaScopeUsesBlockBoundariesRatherThanIndentation(t *testing.T) {
 	}
 }
 
-func TestAssignmentWithLambdaInitializerStaysInEnclosingScope(t *testing.T) {
+func TestLambdaLocalDoesNotLeakAsGlobalFunctionOrVariable(t *testing.T) {
 	t.Parallel()
-	lines := []string{`targetEvents: events.findAll(e => e.is(snapshotSpec))`, `check(targetEvents)`}
-	scopes := assignmentVariableScopes(lines, inlineFunctionRanges(lines))
-	if _, ok := scopes[1]["targetEvents"]; !ok {
-		t.Fatal("assignment containing an inline lambda should remain visible in the enclosing scope")
+	mgr := testXetoManager(t, `+Funcs {
+  use: Func { value: Obj, fn: Func }
+  inspect: Func { value: Obj }
+}`)
+	source := "items.use(x => do\n  inner: x\nend)\ninspect(inner)"
+	diagnostics := Validate("file:///test.xeto", source, mgr)
+	found := false
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Message == "Undefined variable: inner" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("lambda-local variable should not leak past end of lambda: %#v", diagnostics)
 	}
 }
 
