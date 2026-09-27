@@ -43,6 +43,18 @@ type ParsedFunction struct {
 }
 
 var funcDeclPattern = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*Func\b`)
+var specDeclPattern = regexp.MustCompile(`^([A-Z][A-Za-z0-9_]*)\s*:`)
+
+// ParseSpecNames returns top-level Xeto spec names declared in source.
+func ParseSpecNames(content string) map[string]struct{} {
+	names := map[string]struct{}{}
+	for _, line := range strings.Split(lexer.MaskComments(content).Text, "\n") {
+		if match := specDeclPattern.FindStringSubmatch(line); match != nil {
+			names[match[1]] = struct{}{}
+		}
+	}
+	return names
+}
 
 func ParseURIContent(uri, content string) map[string]ParsedFunction {
 	masked := lexer.MaskComments(content)

@@ -53,6 +53,30 @@ func TestReportsUndefinedSimpleArgument(t *testing.T) {
 	}
 }
 
+func TestCapitalizedArgumentResolvesAgainstIndexedSpecsAfterLocals(t *testing.T) {
+	t.Parallel()
+	mgr, err := index.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	uri := "file:///workspace/specs.xeto"
+	mgr.UpdateDocument(uri, `FooBar: Dict
++Funcs {
+  spec: Func { value: Obj }
+}`)
+
+	if diagnostics := Validate(uri, `spec(FooBar)`, mgr); len(diagnostics) != 0 {
+		t.Fatalf("globally indexed Spec name should resolve as an argument: %#v", diagnostics)
+	}
+	if diagnostics := Validate(uri, "LocalThing = value\nspec(LocalThing)", mgr); len(diagnostics) != 0 {
+		t.Fatalf("locally scoped capitalized variable should resolve before Specs: %#v", diagnostics)
+	}
+	diagnostics := Validate(uri, `spec(UnknownSpec)`, mgr)
+	if len(diagnostics) != 1 || diagnostics[0].Message != "Undefined variable: UnknownSpec" {
+		t.Fatalf("unknown capitalized name should remain undefined: %#v", diagnostics)
+	}
+}
+
 func TestXetoPipeReceiverOccupiesFirstArgument(t *testing.T) {
 	t.Parallel()
 	mgr := testXetoManager(t, `+Funcs {

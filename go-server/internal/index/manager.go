@@ -29,6 +29,8 @@ type Manager struct {
 	ReferencesMap        map[string][]Location
 	workspaceFileSymbols map[string]map[string]Symbol
 	externalFileSymbols  map[string]map[string]Symbol
+	workspaceFileSpecs   map[string]map[string]struct{}
+	externalFileSpecs    map[string]map[string]struct{}
 	documentSymbols      map[string][]DocumentSymbol
 	workspaceRoots       []ScanRoot
 	extraRoots           []ScanRoot
@@ -48,6 +50,8 @@ func NewManager() (*Manager, error) {
 		ReferencesMap:        map[string][]Location{},
 		workspaceFileSymbols: map[string]map[string]Symbol{},
 		externalFileSymbols:  map[string]map[string]Symbol{},
+		workspaceFileSpecs:   map[string]map[string]struct{}{},
+		externalFileSpecs:    map[string]map[string]struct{}{},
 		documentSymbols:      map[string][]DocumentSymbol{},
 	}
 	mgr.rebuildCoreFuncsLocked()
@@ -93,10 +97,14 @@ func (m *Manager) UpdateLocalIndex(workspaceRoot string) {
 func (m *Manager) SetWorkspaceRoots(roots []ScanRoot) {
 	paths := normalizeScanRoots(roots)
 	fileSymbols := map[string]map[string]Symbol{}
+	fileSpecs := map[string]map[string]struct{}{}
 	docSymbols := map[string][]DocumentSymbol{}
 	for _, root := range paths {
 		label := workspaceRootLabel(root)
 		scanRoot(root.Path, label, func(uri string, symbols map[string]Symbol, docs []DocumentSymbol) {
+			if strings.HasSuffix(strings.ToLower(pathFromURI(uri)), ".xeto") {
+				fileSpecs[uri] = xeto.ParseSpecNames(mustReadFile(pathFromURI(uri)))
+			}
 			if len(symbols) > 0 {
 				fileSymbols[uri] = annotateSymbols(symbols, label, OriginLocal)
 			}
@@ -109,6 +117,7 @@ func (m *Manager) SetWorkspaceRoots(roots []ScanRoot) {
 	removeDocumentSymbols(m.documentSymbols, m.workspaceFileSymbols, fileSymbols)
 	m.workspaceRoots = paths
 	m.workspaceFileSymbols = fileSymbols
+	m.workspaceFileSpecs = fileSpecs
 	mergeDocumentSymbols(m.documentSymbols, docSymbols)
 	m.rebuildLocalFuncsLocked()
 	m.rebuildExternalFuncsLocked()
@@ -118,6 +127,7 @@ func (m *Manager) SetWorkspaceRoots(roots []ScanRoot) {
 func (m *Manager) SetExtraRoots(roots []ScanRoot) {
 	paths := normalizeScanRoots(roots)
 	externalFileSymbols := map[string]map[string]Symbol{}
+	externalFileSpecs := map[string]map[string]struct{}{}
 	docSymbols := map[string][]DocumentSymbol{}
 	m.mu.RLock()
 	workspaceRoots := append([]ScanRoot(nil), m.workspaceRoots...)
@@ -127,6 +137,9 @@ func (m *Manager) SetExtraRoots(roots []ScanRoot) {
 		scanRoot(root.Path, label, func(uri string, symbols map[string]Symbol, docs []DocumentSymbol) {
 			if isUnderAnyRoot(pathFromURI(uri), workspaceRoots) {
 				return
+			}
+			if strings.HasSuffix(strings.ToLower(pathFromURI(uri)), ".xeto") {
+				externalFileSpecs[uri] = xeto.ParseSpecNames(mustReadFile(pathFromURI(uri)))
 			}
 			if len(symbols) > 0 {
 				externalFileSymbols[uri] = annotateSymbols(symbols, label, OriginExternal)
@@ -140,6 +153,7 @@ func (m *Manager) SetExtraRoots(roots []ScanRoot) {
 	removeDocumentSymbols(m.documentSymbols, m.externalFileSymbols, m.workspaceFileSymbols)
 	m.extraRoots = paths
 	m.externalFileSymbols = externalFileSymbols
+	m.externalFileSpecs = externalFileSpecs
 	mergeDocumentSymbols(m.documentSymbols, docSymbols)
 	m.rebuildExternalFuncsLocked()
 	m.mu.Unlock()
@@ -166,6 +180,16 @@ func (m *Manager) UpdateDocument(uri, content string) {
 		}
 		m.documentSymbols[uri] = docs
 	}
+	if strings.HasSuffix(strings.ToLower(path), ".xeto") {
+		if origin == OriginExternal {
+			m.externalFileSpecs[uri] = xeto.ParseSpecNames(content)
+		} else {
+			m.workspaceFileSpecs[uri] = xeto.ParseSpecNames(content)
+		}
+	} else {
+		delete(m.workspaceFileSpecs, uri)
+		delete(m.externalFileSpecs, uri)
+	}
 	m.rebuildLocalFuncsLocked()
 	m.rebuildExternalFuncsLocked()
 }
@@ -176,8 +200,24 @@ func (m *Manager) RemoveDocument(uri string) {
 	delete(m.workspaceFileSymbols, uri)
 	delete(m.externalFileSymbols, uri)
 	delete(m.documentSymbols, uri)
+	delete(m.workspaceFileSpecs, uri)
+	delete(m.externalFileSpecs, uri)
 	m.rebuildLocalFuncsLocked()
 	m.rebuildExternalFuncsLocked()
+}
+
+// HasSpecName reports whether a name is declared by any indexed Xeto source.
+func (m *Manager) HasSpecName(name string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, files := range []map[string]map[string]struct{}{m.workspaceFileSpecs, m.externalFileSpecs} {
+		for _, names := range files {
+			if _, ok := names[name]; ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (m *Manager) GetCompletions() CompletionList {

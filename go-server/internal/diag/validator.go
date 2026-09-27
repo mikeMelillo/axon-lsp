@@ -148,6 +148,9 @@ func validateCallArguments(uri string, lineNumber int, line string, manager *ind
 					if _, defined := scoped[arg.text]; defined {
 						continue
 					}
+					if isCapitalizedIdentifier(arg.text) && manager.HasSpecName(arg.text) {
+						continue
+					}
 					if _, defined := localFuncs[arg.text]; defined {
 						continue
 					}
@@ -212,6 +215,10 @@ func isIdentifier(value string) bool {
 		}
 	}
 	return true
+}
+
+func isCapitalizedIdentifier(value string) bool {
+	return len(value) > 0 && value[0] >= 'A' && value[0] <= 'Z'
 }
 
 type argumentRange struct {

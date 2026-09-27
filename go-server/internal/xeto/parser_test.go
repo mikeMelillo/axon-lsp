@@ -5,6 +5,24 @@ import (
 	"testing"
 )
 
+func TestParseTopLevelSpecNames(t *testing.T) {
+	t.Parallel()
+	names := ParseSpecNames(`pragma: Lib < name: "test.lib" >
+FooBar: Dict
+// HiddenSpec: Dict
+  NestedSpec: Dict
+fooFunc: Func { value: Obj }
+`)
+	if _, ok := names["FooBar"]; !ok {
+		t.Fatalf("expected top-level Spec name, got %#v", names)
+	}
+	for _, name := range []string{"HiddenSpec", "NestedSpec", "fooFunc"} {
+		if _, ok := names[name]; ok {
+			t.Errorf("did not expect %q to be indexed as a top-level Spec", name)
+		}
+	}
+}
+
 func TestParseFuncsMixinExtractsCallableFunctions(t *testing.T) {
 	t.Parallel()
 	content := `+Funcs {
