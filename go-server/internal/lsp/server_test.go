@@ -492,6 +492,11 @@ func TestEmbeddedExpressionTypeUsesFinalChainedCall(t *testing.T) {
 			t.Fatalf("expected final chained return type Number for %q, got %q ok=%t", expression, typeName, ok)
 		}
 	}
+	expression := `server.eventRead((now()-(longestDebounce+5min))..now()).findAll(e=> e.is(snapshotSpec) and e["testSpec"] == testSpec)`
+	typeName, ok := server.embeddedExpressionType("file:///workspace/test.xeto", view, 0, expression, nil)
+	if !ok || typeName != "Obj?" {
+		t.Fatalf("expected outer findAll return type Obj?, not lambda predicate type: got %q ok=%t", typeName, ok)
+	}
 }
 
 func TestTrioDefcompAndBranchPairFeatures(t *testing.T) {

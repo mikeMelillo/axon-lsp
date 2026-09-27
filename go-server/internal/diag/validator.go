@@ -12,6 +12,8 @@ import (
 
 var inlineFunctionPattern = regexp.MustCompile(`\(?\s*([A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*)\s*\)?\s*=>`)
 var variableAssignmentPattern = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*([=:])`)
+var catchVariablePattern = regexp.MustCompile(`\bcatch\s*(?:\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)|([A-Za-z_][A-Za-z0-9_]*))`)
+var blockKeywordPattern = regexp.MustCompile(`\b(do|end)\b`)
 
 var keywords = map[string]struct{}{
 	"if": {}, "do": {}, "return": {}, "try": {}, "catch": {}, "throw": {},
@@ -44,16 +46,24 @@ func validate(uri string, source string, manager *index.Manager, clearReferences
 	diagnostics := []index.Diagnostic{}
 	masked := lexer.MaskComments(source)
 	localFuncs, paramScopes := parser.ParseLocalFunctions(masked.Text)
-	initialScope := make(map[string]struct{}, len(scopedVariables))
-	for _, name := range scopedVariables {
-		initialScope[name] = struct{}{}
-	}
 	lines := strings.Split(masked.Text, "\n")
-	inlineScopes := inlineFunctionScopes(lines)
-	assignmentScopes := assignmentVariableScopes(lines)
+	lambdaRanges := inlineFunctionRanges(lines)
+	inlineScopes := inlineFunctionScopes(lines, lambdaRanges)
+	catchScopes := catchVariableScopes(lines)
+	assignmentScopes := assignmentVariableScopes(lines, lambdaRanges)
 	inIgnoredField := false
 
 	for i, line := range lines {
+		lineScope := inlineScopes[i]
+		for name := range assignmentScopes[i] {
+			lineScope[name] = struct{}{}
+		}
+		for name := range catchScopes[i] {
+			lineScope[name] = struct{}{}
+		}
+		for _, name := range scopedVariables {
+			lineScope[name] = struct{}{}
+		}
 		stripped := strings.TrimSpace(line)
 		indent := len(line) - len(strings.TrimLeft(line, " "))
 
@@ -75,7 +85,7 @@ func validate(uri string, source string, manager *index.Manager, clearReferences
 			}
 			_, isLocal := localFuncs[match.Word]
 			_, isParam := paramScopes[i][match.Word]
-			_, isScoped := initialScope[match.Word]
+			_, isScoped := lineScope[match.Word]
 			symbol, found := manager.FindFunctionForURI(match.Word, uri)
 			if found {
 				manager.AddReference(match.Word, resolver.Location(uri, i, match.Start, match.End))
@@ -92,13 +102,7 @@ func validate(uri string, source string, manager *index.Manager, clearReferences
 				})
 			}
 		}
-		for _, name := range scopedVariables {
-			inlineScopes[i][name] = struct{}{}
-		}
-		for name := range assignmentScopes[i] {
-			inlineScopes[i][name] = struct{}{}
-		}
-		diagnostics = append(diagnostics, validateCallArguments(uri, i, line, manager, inlineScopes[i], warnMissingArguments)...)
+		diagnostics = append(diagnostics, validateCallArguments(uri, i, line, manager, localFuncs, lineScope, warnMissingArguments)...)
 	}
 
 	return diagnostics
@@ -106,26 +110,45 @@ func validate(uri string, source string, manager *index.Manager, clearReferences
 
 // assignmentVariableScopes makes simple Axon assignments visible to subsequent
 // lines without treating a variable as defined in its own initializer.
-func assignmentVariableScopes(lines []string) []map[string]struct{} {
+func assignmentVariableScopes(lines []string, lambdaRanges []functionScopeRange) []map[string]struct{} {
 	result := make([]map[string]struct{}, len(lines))
-	defined := map[string]struct{}{}
-	for i, line := range lines {
-		result[i] = make(map[string]struct{}, len(defined))
-		for name := range defined {
-			result[i][name] = struct{}{}
-		}
+	for i := range result {
+		result[i] = map[string]struct{}{}
+	}
+	for lineNumber, line := range lines {
 		if match := variableAssignmentPattern.FindStringSubmatchIndex(line); match != nil {
 			separator := line[match[4]:match[5]]
 			if separator == "=" && match[1] < len(line) && (line[match[1]] == '=' || line[match[1]] == '>') {
 				continue
 			}
-			defined[line[match[2]:match[3]]] = struct{}{}
+			name := line[match[2]:match[3]]
+			endLine := len(lines) - 1
+			shortestRange := endLine + 1
+			for _, scope := range lambdaRanges {
+				if lineNumber >= scope.start && lineNumber <= scope.end {
+					// A lambda in an initializer does not make the variable being
+					// initialized local to that lambda. Only assignments occurring
+					// within the lambda body inherit its shorter lifetime.
+					if lineNumber == scope.start && match[2] < scope.bodyStartColumn {
+						continue
+					}
+					scopeLength := scope.end - scope.start
+					if scopeLength < shortestRange {
+						endLine = scope.end
+						shortestRange = scopeLength
+					}
+				}
+			}
+			// A declaration is not in scope in its own initializer.
+			for scopeLine := lineNumber + 1; scopeLine <= endLine; scopeLine++ {
+				result[scopeLine][name] = struct{}{}
+			}
 		}
 	}
 	return result
 }
 
-func validateCallArguments(uri string, lineNumber int, line string, manager *index.Manager, scoped map[string]struct{}, warnMissingArguments bool) []index.Diagnostic {
+func validateCallArguments(uri string, lineNumber int, line string, manager *index.Manager, localFuncs, scoped map[string]struct{}, warnMissingArguments bool) []index.Diagnostic {
 	result := []index.Diagnostic{}
 	for _, word := range resolver.AllWords(line) {
 		if word.End >= len(line) || line[word.End] != '(' {
@@ -172,13 +195,19 @@ func validateCallArguments(uri string, lineNumber int, line string, manager *ind
 			}
 			actual, ok := primitiveArgumentType(arg.text)
 			if !ok {
-				if fn.Name == "read" && n == 0 {
-					// A bare identifier in read's filter is a Haystack tag/filter
-					// expression, not necessarily an Axon variable reference.
+				if isFilterArgument(fn, paramIndex) {
+					// Filter expressions use bare tag names as syntax, rather than
+					// necessarily referring to an Axon variable.
 					continue
 				}
 				if isIdentifier(arg.text) && !isKnownArgumentIdentifier(arg.text, fn, paramIndex) {
 					if _, defined := scoped[arg.text]; defined {
+						continue
+					}
+					if _, defined := localFuncs[arg.text]; defined {
+						continue
+					}
+					if _, defined := manager.FindFunctionForURI(arg.text, uri); defined {
 						continue
 					}
 					result = append(result, index.Diagnostic{Range: index.Range{Start: index.Position{Line: lineNumber, Character: word.End + 1 + arg.start}, End: index.Position{Line: lineNumber, Character: word.End + 1 + arg.end}}, Message: "Undefined variable: " + arg.text, Severity: 2})
@@ -196,34 +225,115 @@ func validateCallArguments(uri string, lineNumber int, line string, manager *ind
 	return result
 }
 
-func inlineFunctionScopes(lines []string) []map[string]struct{} {
-	result := make([]map[string]struct{}, len(lines))
-	active := map[string]int{}
-	activeAtLine := map[string]int{}
-	for i, line := range lines {
-		indent := len(line) - len(strings.TrimLeft(line, " \t"))
-		if strings.TrimSpace(line) != "" {
-			for name, declaredLine := range activeAtLine {
-				if i > declaredLine && indent <= active[name] {
-					delete(active, name)
-					delete(activeAtLine, name)
+func isFilterArgument(fn index.Symbol, position int) bool {
+	if position < 0 || position >= len(fn.Params) {
+		return false
+	}
+	typeName, _ := optionalType(fn.ParamTypes[fn.Params[position]])
+	typeName = strings.TrimSpace(typeName)
+	if idx := strings.LastIndex(typeName, "::"); idx >= 0 {
+		typeName = typeName[idx+2:]
+	}
+	return typeName == "Filter"
+}
+
+type functionScopeRange struct {
+	start           int
+	end             int
+	bodyStartColumn int
+}
+
+func inlineFunctionRanges(lines []string) []functionScopeRange {
+	ranges := []functionScopeRange{}
+	for lineNumber, line := range lines {
+		for _, match := range inlineFunctionPattern.FindAllStringSubmatchIndex(line, -1) {
+			endLine := lineNumber
+			if blockStart := strings.Index(line[match[1]:], "do"); blockStart >= 0 && isWordAt(line[match[1]+blockStart:], "do") {
+				if found, ok := matchingBlockEnd(lines, lineNumber, match[1]+blockStart); ok {
+					endLine = found
+				} else {
+					endLine = len(lines) - 1
 				}
 			}
+			ranges = append(ranges, functionScopeRange{start: lineNumber, end: endLine, bodyStartColumn: match[1]})
 		}
+	}
+	return ranges
+}
+
+func inlineFunctionScopes(lines []string, ranges []functionScopeRange) []map[string]struct{} {
+	result := make([]map[string]struct{}, len(lines))
+	for i := range result {
 		result[i] = map[string]struct{}{}
-		for name := range active {
-			result[i][name] = struct{}{}
-		}
-		for _, match := range inlineFunctionPattern.FindAllStringSubmatch(line, -1) {
-			for _, name := range strings.Split(match[1], ",") {
-				name = strings.TrimSpace(name)
-				active[name] = indent
-				activeAtLine[name] = i
-				result[i][name] = struct{}{}
+	}
+	for lineNumber, line := range lines {
+		for _, match := range inlineFunctionPattern.FindAllStringSubmatchIndex(line, -1) {
+			names := strings.Split(line[match[2]:match[3]], ",")
+			endLine := lineNumber
+			for _, scope := range ranges {
+				if scope.start == lineNumber && scope.end > endLine {
+					endLine = scope.end
+				}
+			}
+			for scopeLine := lineNumber; scopeLine <= endLine; scopeLine++ {
+				for _, name := range names {
+					result[scopeLine][strings.TrimSpace(name)] = struct{}{}
+				}
 			}
 		}
 	}
 	return result
+}
+
+func catchVariableScopes(lines []string) []map[string]struct{} {
+	result := make([]map[string]struct{}, len(lines))
+	for i := range result {
+		result[i] = map[string]struct{}{}
+	}
+	for lineNumber, line := range lines {
+		for _, match := range catchVariablePattern.FindAllStringSubmatchIndex(line, -1) {
+			nameStart, nameEnd := match[2], match[3]
+			if nameStart < 0 {
+				nameStart, nameEnd = match[4], match[5]
+			}
+			name := line[nameStart:nameEnd]
+			endLine := lineNumber
+			if blockStart := strings.Index(line[match[1]:], "do"); blockStart >= 0 && isWordAt(line[match[1]+blockStart:], "do") {
+				if found, ok := matchingBlockEnd(lines, lineNumber, match[1]+blockStart); ok {
+					endLine = found
+				}
+			}
+			for scopeLine := lineNumber; scopeLine <= endLine; scopeLine++ {
+				result[scopeLine][name] = struct{}{}
+			}
+		}
+	}
+	return result
+}
+
+func matchingBlockEnd(lines []string, startLine, startOffset int) (int, bool) {
+	depth := 0
+	for lineNumber := startLine; lineNumber < len(lines); lineNumber++ {
+		line := lines[lineNumber]
+		if lineNumber == startLine {
+			line = line[startOffset:]
+		}
+		for _, token := range blockKeywordPattern.FindAllStringSubmatch(line, -1) {
+			if token[1] == "do" {
+				depth++
+			} else {
+				depth--
+				if depth == 0 {
+					return lineNumber, true
+				}
+			}
+		}
+	}
+	return len(lines) - 1, false
+}
+
+func isWordAt(value, word string) bool {
+	return strings.HasPrefix(value, word) && (len(value) == len(word) || !(value[len(word)] == '_' || value[len(word)] >= 'a' && value[len(word)] <= 'z' || value[len(word)] >= 'A' && value[len(word)] <= 'Z' || value[len(word)] >= '0' && value[len(word)] <= '9'))
 }
 
 func isInlineFunction(args []argumentRange) bool {

@@ -109,6 +109,65 @@ func TestInlineFunctionParametersAreScopedUnknowns(t *testing.T) {
 	}
 }
 
+func TestKnownFunctionsCanBePassedAsValues(t *testing.T) {
+	t.Parallel()
+	mgr := testXetoManager(t, `+Funcs {
+  foldCol: Func { grid: Obj, col: Str, fn: Func }
+}`)
+	if diagnostics := Validate("file:///test.xeto", `grid.foldCol("colName", avg)`, mgr); len(diagnostics) != 0 {
+		t.Fatalf("known function should be accepted as a function value: %#v", diagnostics)
+	}
+}
+
+func TestFilterTypedArgumentsAllowBareTagExpressions(t *testing.T) {
+	t.Parallel()
+	mgr := testXetoManager(t, `+Funcs {
+  query: Func { filter: Filter }
+}`)
+	if diagnostics := Validate("file:///test.xeto", `query(sysHealthMeta)`, mgr); len(diagnostics) != 0 {
+		t.Fatalf("bare filter tag should not be treated as an undefined variable: %#v", diagnostics)
+	}
+}
+
+func TestLambdaScopeUsesBlockBoundariesRatherThanIndentation(t *testing.T) {
+	t.Parallel()
+	mgr := testXetoManager(t, `+Funcs {
+  use: Func { value: Obj, fn: Func }
+  inspect: Func { value: Obj }
+}`)
+	for _, bodyIndent := range []string{"  ", ""} {
+		source := "grid.use(x => do\n" + bodyIndent + "innerVar = x\n" + bodyIndent + "inspect(innerVar)\nend)"
+		if diagnostics := Validate("file:///test.xeto", source, mgr); len(diagnostics) != 0 {
+			t.Fatalf("lambda parameter and local should remain scoped through do/end regardless of indentation: %#v", diagnostics)
+		}
+		if diagnostics := Validate("file:///test.xeto", source+"\ninspect(x)\ninspect(innerVar)", mgr); len(diagnostics) != 2 {
+			t.Fatalf("lambda parameter and local should not leak outside their function: %#v", diagnostics)
+		}
+	}
+}
+
+func TestAssignmentWithLambdaInitializerStaysInEnclosingScope(t *testing.T) {
+	t.Parallel()
+	lines := []string{`targetEvents: events.findAll(e => e.is(snapshotSpec))`, `check(targetEvents)`}
+	scopes := assignmentVariableScopes(lines, inlineFunctionRanges(lines))
+	if _, ok := scopes[1]["targetEvents"]; !ok {
+		t.Fatal("assignment containing an inline lambda should remain visible in the enclosing scope")
+	}
+}
+
+func TestCatchVariablesAreScopedInBothForms(t *testing.T) {
+	t.Parallel()
+	mgr := testXetoManager(t, `+Funcs {
+  inspect: Func { value: Obj }
+}`)
+	for _, catch := range []string{"catch (e) do", "catch e do"} {
+		source := "try do\n  null\nend " + catch + "\n  inspect(e)\nend"
+		if diagnostics := Validate("file:///test.xeto", source, mgr); len(diagnostics) != 0 {
+			t.Errorf("catch variable should be in scope for %q: %#v", catch, diagnostics)
+		}
+	}
+}
+
 func TestPreviouslyAssignedVariableIsInScopeForCallArguments(t *testing.T) {
 	t.Parallel()
 	mgr := testXetoManager(t, `+Funcs {

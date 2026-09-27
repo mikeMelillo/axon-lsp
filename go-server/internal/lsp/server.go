@@ -840,31 +840,81 @@ func (s *Server) embeddedExpressionType(uri string, region embeddedRegionView, l
 
 func expressionCallName(expression string) (string, bool) {
 	expression = strings.TrimSpace(expression)
-	open := strings.IndexByte(expression, '(')
-	// A dotted call chain produces its result from the final method call.
-	if dot := strings.LastIndex(expression, "."); dot >= 0 {
-		end := len(expression)
-		if methodOpen := strings.IndexAny(expression[dot+1:], "( \t\r\n"); methodOpen >= 0 {
-			end = dot + 1 + methodOpen
+	var quote byte
+	parenDepth, bracketDepth, braceDepth := 0, 0, 0
+	lastTopLevelDot := -1
+	firstTopLevelOpen := -1
+	for i := 0; i < len(expression); i++ {
+		ch := expression[i]
+		if quote != 0 {
+			if ch == quote && (i == 0 || expression[i-1] != '\\') {
+				quote = 0
+			}
+			continue
 		}
-		name := expression[dot+1 : end]
+		if ch == '"' || ch == '\'' || ch == '`' {
+			quote = ch
+			continue
+		}
+		if parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 {
+			if ch == '.' {
+				lastTopLevelDot = i
+			}
+			if ch == '(' && firstTopLevelOpen < 0 {
+				firstTopLevelOpen = i
+			}
+		}
+		switch ch {
+		case '(':
+			parenDepth++
+		case ')':
+			parenDepth--
+		case '[':
+			bracketDepth++
+		case ']':
+			bracketDepth--
+		case '{':
+			braceDepth++
+		case '}':
+			braceDepth--
+		}
+	}
+
+	// Only consider member calls at expression depth zero. Dots inside an
+	// argument or lambda body describe that nested expression, not the result
+	// type of the outer call (for example e.is(...) inside findAll(...)).
+	if lastTopLevelDot >= 0 {
+		start := lastTopLevelDot + 1
+		for start < len(expression) && (expression[start] == ' ' || expression[start] == '\t' || expression[start] == '\r' || expression[start] == '\n') {
+			start++
+		}
+		end := start
+		for end < len(expression) && isIdentifierChar(expression[end]) {
+			end++
+		}
+		name := expression[start:end]
 		if isIdentifier(name) {
 			return name, true
 		}
 	}
-	if open < 0 {
+	if firstTopLevelOpen < 0 {
 		return "", false
 	}
-	nameEnd := open
-	nameStart := nameEnd - 1
-	for nameStart >= 0 && (isIdentifierChar(expression[nameStart])) {
+	nameEnd := firstTopLevelOpen
+	nameStart := nameEnd
+	for nameStart > 0 && isIdentifierChar(expression[nameStart-1]) {
 		nameStart--
 	}
-	name := expression[nameStart+1 : nameEnd]
-	if !isIdentifier(name) {
+	if nameStart == nameEnd {
 		return "", false
 	}
-	return name, true
+	// Do not mistake an inner call in an operator expression for the type of
+	// the entire expression.
+	if strings.TrimSpace(expression[:nameStart]) != "" {
+		return "", false
+	}
+	name := expression[nameStart:nameEnd]
+	return name, isIdentifier(name)
 }
 
 func isIdentifier(value string) bool {
