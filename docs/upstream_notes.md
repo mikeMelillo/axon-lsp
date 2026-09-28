@@ -50,6 +50,20 @@ locations would make diagnostics and editor features more reliable than
 independent text scanners, and would benefit formatters, linters, and other
 language tooling in addition to this LSP.
 
+For editor use, the API should also support error-tolerant parsing and partial
+ASTs while a user is typing, with stable node/token kinds and source maps from
+embedded Axon fragments back to the containing Xeto/Trio document. Without
+those guarantees, every editor tool must rebuild both recovery behavior and
+host-offset mapping itself.
+
+## Xeto: embedded Axon source-map contract
+
+Expose the exact source range and host-to-embedded offset mapping for every
+embedded Axon body. A stable API should account for indentation, delimiter
+lines, and line-ending conventions, and map parser diagnostics back to the
+original Xeto document. The same facility would help formatters and future
+Xeto-aware tools.
+
 ## Follow-up process
 
 - Verify each proposal against current upstream behavior and terminology.

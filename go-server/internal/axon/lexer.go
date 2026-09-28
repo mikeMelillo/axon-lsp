@@ -43,7 +43,7 @@ type Token struct {
 
 var keywords = map[string]struct{}{
 	"and": {}, "catch": {}, "defcomp": {}, "deflinks": {}, "do": {}, "else": {},
-	"end": {}, "false": {}, "if": {}, "not": {}, "null": {}, "or": {}, "return": {},
+	"end": {}, "false": {}, "if": {}, "m": {}, "na": {}, "not": {}, "null": {}, "or": {}, "return": {},
 	"throw": {}, "true": {}, "try": {},
 }
 
