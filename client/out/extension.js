@@ -108,7 +108,7 @@ function startLanguageClient(context) {
         },
         synchronize: {
             // Notify the server about file changes in the workspace
-            fileEvents: vscode_1.workspace.createFileSystemWatcher('**/{*.axon,*.trio,*.fan,*.xeto}')
+            fileEvents: vscode_1.workspace.createFileSystemWatcher('**/{*.trio,*.fan,*.xeto}')
         },
         outputChannel: outputChannel,
         traceOutputChannel: vscode_1.window.createOutputChannel('Axon LSP Trace'),
