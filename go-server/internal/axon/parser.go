@@ -77,6 +77,7 @@ func (*BinaryExpr) axonExpr()          {}
 type MemberExpr struct {
 	Receiver Expr
 	Name     string
+	NameSpan SourceSpan
 	Source   SourceSpan
 }
 
@@ -283,7 +284,7 @@ func (p *expressionParser) parseExpression(minPrecedence int) Expr {
 				return left
 			}
 			p.consume()
-			left = &MemberExpr{Name: name.Text, Receiver: left, Source: mergeSpan(left.Span(), spanOf(name))}
+			left = &MemberExpr{Name: name.Text, NameSpan: spanOf(name), Receiver: left, Source: mergeSpan(left.Span(), spanOf(name))}
 			continue
 		}
 		if p.at(TokenOperator, "[") {

@@ -33,6 +33,25 @@ func TestReportsDefinitePrimitiveArgumentMismatch(t *testing.T) {
 	}
 }
 
+func TestAstArgumentValidationHandlesMultilineAndNestedCalls(t *testing.T) {
+	t.Parallel()
+	mgr := testXetoManager(t, `+Funcs {
+  number: Func { value: Number }
+  wrap: Func { value: Obj }
+}`)
+	source := "number(\n  \"bad\"\n)\nwrap(number(\"also bad\"))"
+	diagnostics := Validate("file:///test.xeto", source, mgr)
+	if len(diagnostics) != 2 {
+		t.Fatalf("expected AST validation for multiline and nested calls, got %#v", diagnostics)
+	}
+	if diagnostics[0].Message != "Argument value expects Number; received Str" || diagnostics[0].Range.Start != (index.Position{Line: 1, Character: 2}) || diagnostics[0].Range.End != (index.Position{Line: 1, Character: 7}) {
+		t.Fatalf("unexpected multiline argument diagnostic: %#v", diagnostics[0])
+	}
+	if diagnostics[1].Message != "Argument value expects Number; received Str" || diagnostics[1].Range.Start.Line != 3 {
+		t.Fatalf("unexpected nested argument diagnostic: %#v", diagnostics[1])
+	}
+}
+
 func TestReportsUndefinedSimpleArgument(t *testing.T) {
 	t.Parallel()
 	mgr, err := index.NewManager()

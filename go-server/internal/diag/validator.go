@@ -48,6 +48,8 @@ func validate(uri string, source string, manager *index.Manager, clearReferences
 	}
 	bindings := scope.Analyze(masked.Text, parameters)
 	lines := strings.Split(masked.Text, "\n")
+	lineScopes := make([]map[string]struct{}, len(lines))
+	ignoredLines := make([]bool, len(lines))
 	inIgnoredField := false
 
 	for i, line := range lines {
@@ -55,6 +57,7 @@ func validate(uri string, source string, manager *index.Manager, clearReferences
 		for name := range paramScopes[i] {
 			lineScope[name] = struct{}{}
 		}
+		lineScopes[i] = lineScope
 		stripped := strings.TrimSpace(line)
 		indent := len(line) - len(strings.TrimLeft(line, " "))
 
@@ -64,6 +67,7 @@ func validate(uri string, source string, manager *index.Manager, clearReferences
 			inIgnoredField = false
 		}
 		if inIgnoredField || masked.LineCommentContains(i, "//lspignore") {
+			ignoredLines[i] = true
 			continue
 		}
 
@@ -93,33 +97,34 @@ func validate(uri string, source string, manager *index.Manager, clearReferences
 				})
 			}
 		}
-		diagnostics = append(diagnostics, validateCallArguments(uri, i, line, manager, localFuncs, lineScope, warnMissingArguments)...)
+	}
+	for _, expression := range axon.Parse(masked.Text).Expressions {
+		diagnostics = append(diagnostics, validateCallsFromAST(uri, masked.Text, expression, manager, localFuncs, paramScopes, lineScopes, ignoredLines, warnMissingArguments)...)
 	}
 
 	return diagnostics
 }
 
-func validateCallArguments(uri string, lineNumber int, line string, manager *index.Manager, localFuncs, scoped map[string]struct{}, warnMissingArguments bool) []index.Diagnostic {
+func validateCallsFromAST(uri, source string, expression axon.Expr, manager *index.Manager, localFuncs map[string]struct{}, paramScopes map[int]map[string]struct{}, lineScopes []map[string]struct{}, ignoredLines []bool, warnMissingArguments bool) []index.Diagnostic {
 	result := []index.Diagnostic{}
-	for _, word := range resolver.AllWords(line) {
-		if word.End >= len(line) || line[word.End] != '(' {
-			continue
+	visitExpr(expression, func(node axon.Expr) {
+		call, isCall := node.(*axon.CallExpr)
+		if !isCall {
+			return
 		}
-		fn, ok := manager.FindFunctionForURI(word.Word, uri)
+		name, nameSpan, pipeArgs, ok := callTarget(call.Callee)
 		if !ok {
-			continue
+			return
 		}
-		close := matchingParen(line, word.End)
-		if close < 0 {
-			continue
+		calleeLine := nameSpan.Start.Line
+		if calleeLine >= 0 && calleeLine < len(ignoredLines) && ignoredLines[calleeLine] {
+			return
 		}
-		args := splitArguments(line[word.End+1 : close])
-		pipeArgs := 0
-		// Xeto/Axon member calls receive the expression to the left of the dot
-		// as their implicit first argument (foo.func(bar) == func(foo, bar)).
-		if word.Start > 0 && line[word.Start-1] == '.' {
-			pipeArgs = 1
+		fn, found := manager.FindFunctionForURI(name, uri)
+		if !found {
+			return
 		}
+		args := call.Arguments
 		argumentCount := len(args) + pipeArgs
 		if warnMissingArguments && len(fn.ParamTypes) > 0 && argumentCount < len(fn.Params) {
 			missing := []string{}
@@ -129,35 +134,40 @@ func validateCallArguments(uri string, lineNumber int, line string, manager *ind
 				}
 			}
 			if len(missing) > 0 {
-				result = append(result, index.Diagnostic{Range: index.Range{Start: index.Position{Line: lineNumber, Character: word.Start}, End: index.Position{Line: lineNumber, Character: word.End}}, Message: "Missing required arguments: " + strings.Join(missing, ", "), Severity: 2})
+				result = append(result, index.Diagnostic{Range: index.Range{Start: toIndexPosition(nameSpan.Start), End: toIndexPosition(nameSpan.End)}, Message: "Missing required arguments: " + strings.Join(missing, ", "), Severity: 2})
 			}
 		}
 		for n, arg := range args {
 			paramIndex := n + pipeArgs
-			if paramIndex >= len(fn.Params) || isInlineFunctionArgument(arg.text) {
+			if paramIndex >= len(fn.Params) {
 				break
 			}
-			actual, ok := primitiveArgumentType(arg.text)
-			if !ok {
+			if _, isLambda := arg.(*axon.LambdaExpr); isLambda {
+				continue
+			}
+			actual, hasActualType := argumentExprType(source, arg)
+			if !hasActualType {
 				if isFilterArgument(fn, paramIndex) {
 					// Filter expressions use bare tag names as syntax, rather than
 					// necessarily referring to an Axon variable.
 					continue
 				}
-				if isIdentifier(arg.text) && !isKnownArgumentIdentifier(arg.text, fn, paramIndex) {
-					if _, defined := scoped[arg.text]; defined {
+				nameExpr, isName := arg.(*axon.NameExpr)
+				if isName && !isKnownArgumentIdentifier(nameExpr.Name, fn, paramIndex) {
+					_, locallyDefined := scopedNameAt(lineScopes, nameExpr.Span().Start.Line, nameExpr.Name)
+					if locallyDefined {
 						continue
 					}
-					if isCapitalizedIdentifier(arg.text) && manager.HasSpecName(arg.text) {
+					if isCapitalizedIdentifier(nameExpr.Name) && manager.HasSpecName(nameExpr.Name) {
 						continue
 					}
-					if _, defined := localFuncs[arg.text]; defined {
+					if _, defined := localFuncs[nameExpr.Name]; defined {
 						continue
 					}
-					if _, defined := manager.FindFunctionForURI(arg.text, uri); defined {
+					if _, defined := manager.FindFunctionForURI(nameExpr.Name, uri); defined {
 						continue
 					}
-					result = append(result, index.Diagnostic{Range: index.Range{Start: index.Position{Line: lineNumber, Character: word.End + 1 + arg.start}, End: index.Position{Line: lineNumber, Character: word.End + 1 + arg.end}}, Message: "Undefined variable: " + arg.text, Severity: 2})
+					result = append(result, index.Diagnostic{Range: index.Range{Start: toIndexPosition(nameExpr.Span().Start), End: toIndexPosition(nameExpr.Span().End)}, Message: "Undefined variable: " + nameExpr.Name, Severity: 2})
 				}
 				continue
 			}
@@ -166,10 +176,103 @@ func validateCallArguments(uri string, lineNumber int, line string, manager *ind
 			if expected == "" || expected == "Obj" || (actual == "None" && optional) || primitiveCompatible(actual, expected) {
 				continue
 			}
-			result = append(result, index.Diagnostic{Range: index.Range{Start: index.Position{Line: lineNumber, Character: word.End + 1 + arg.start}, End: index.Position{Line: lineNumber, Character: word.End + 1 + arg.end}}, Message: "Argument " + fn.Params[paramIndex] + " expects " + expected + "; received " + actual, Severity: 2})
+			span := arg.Span()
+			result = append(result, index.Diagnostic{Range: index.Range{Start: toIndexPosition(span.Start), End: toIndexPosition(span.End)}, Message: "Argument " + fn.Params[paramIndex] + " expects " + expected + "; received " + actual, Severity: 2})
 		}
-	}
+	})
 	return result
+}
+
+func callTarget(callee axon.Expr) (string, axon.SourceSpan, int, bool) {
+	switch value := callee.(type) {
+	case *axon.NameExpr:
+		return value.Name, value.Span(), 0, true
+	case *axon.MemberExpr:
+		return value.Name, value.NameSpan, 1, true
+	default:
+		return "", axon.SourceSpan{}, 0, false
+	}
+}
+
+func scopedNameAt(scopes []map[string]struct{}, line int, name string) (struct{}, bool) {
+	if line < 0 || line >= len(scopes) || scopes[line] == nil {
+		return struct{}{}, false
+	}
+	_, ok := scopes[line][name]
+	return struct{}{}, ok
+}
+
+func toIndexPosition(position axon.Position) index.Position {
+	return index.Position{Line: position.Line, Character: position.Character}
+}
+
+func argumentExprType(source string, expression axon.Expr) (string, bool) {
+	switch value := expression.(type) {
+	case *axon.GroupExpr:
+		return argumentExprType(source, value.Expression)
+	case *axon.ListExpr:
+		return "List", true
+	case *axon.MapExpr:
+		return "Dict", true
+	case *axon.LiteralExpr:
+		return primitiveArgumentType(value.Value)
+	default:
+		span := expression.Span()
+		if span.StartOffset < 0 || span.EndOffset > len(source) || span.EndOffset < span.StartOffset {
+			return "", false
+		}
+		return primitiveArgumentType(source[span.StartOffset:span.EndOffset])
+	}
+}
+
+func visitExpr(expression axon.Expr, visit func(axon.Expr)) {
+	if expression == nil {
+		return
+	}
+	visit(expression)
+	switch value := expression.(type) {
+	case *axon.GroupExpr:
+		visitExpr(value.Expression, visit)
+	case *axon.UnaryExpr:
+		visitExpr(value.Operand, visit)
+	case *axon.BinaryExpr:
+		visitExpr(value.Left, visit)
+		visitExpr(value.Right, visit)
+	case *axon.MemberExpr:
+		visitExpr(value.Receiver, visit)
+	case *axon.CallExpr:
+		visitExpr(value.Callee, visit)
+		for _, argument := range value.Arguments {
+			visitExpr(argument, visit)
+		}
+	case *axon.IndexExpr:
+		visitExpr(value.Receiver, visit)
+		visitExpr(value.Index, visit)
+	case *axon.LambdaExpr:
+		visitExpr(value.Body, visit)
+	case *axon.SequenceExpr:
+		for _, item := range value.Expressions {
+			visitExpr(item, visit)
+		}
+	case *axon.ListExpr:
+		for _, item := range value.Elements {
+			visitExpr(item, visit)
+		}
+	case *axon.MapExpr:
+		for _, entry := range value.Entries {
+			visitExpr(entry.Key, visit)
+			visitExpr(entry.Value, visit)
+		}
+	case *axon.IfExpr:
+		visitExpr(value.Condition, visit)
+		visitExpr(value.Then, visit)
+		visitExpr(value.Else, visit)
+	case *axon.TryExpr:
+		visitExpr(value.Body, visit)
+		visitExpr(value.Catch, visit)
+	case *axon.ControlExpr:
+		visitExpr(value.Expression, visit)
+	}
 }
 
 func isFilterArgument(fn index.Symbol, position int) bool {
@@ -183,8 +286,6 @@ func isFilterArgument(fn index.Symbol, position int) bool {
 	}
 	return typeName == "Filter"
 }
-
-func isInlineFunctionArgument(value string) bool { return strings.Contains(value, "=>") }
 
 func optionalType(typeName string) (string, bool) {
 	if strings.HasSuffix(strings.TrimSpace(typeName), "?") {
@@ -205,80 +306,8 @@ func isKnownArgumentIdentifier(value string, fn index.Symbol, position int) bool
 	return position < len(fn.Params) && fn.Params[position] == value
 }
 
-func isIdentifier(value string) bool {
-	if value == "" {
-		return false
-	}
-	for i, ch := range value {
-		if !(ch == '_' || ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9') || (i == 0 && ch >= '0' && ch <= '9') {
-			return false
-		}
-	}
-	return true
-}
-
 func isCapitalizedIdentifier(value string) bool {
 	return len(value) > 0 && value[0] >= 'A' && value[0] <= 'Z'
-}
-
-type argumentRange struct {
-	text       string
-	start, end int
-}
-
-func matchingParen(line string, open int) int {
-	depth := 0
-	for i := open; i < len(line); i++ {
-		if line[i] == '(' {
-			depth++
-		}
-		if line[i] == ')' {
-			depth--
-			if depth == 0 {
-				return i
-			}
-		}
-	}
-	return -1
-}
-
-func splitArguments(value string) []argumentRange {
-	result := []argumentRange{}
-	start, depth := 0, 0
-	var quote byte
-	for i := 0; i < len(value); i++ {
-		ch := value[i]
-		if quote != 0 {
-			if ch == quote && (i == 0 || value[i-1] != '\\') {
-				quote = 0
-			}
-			continue
-		}
-		if ch == '"' || ch == '\'' || ch == '`' {
-			quote = ch
-			continue
-		}
-		if ch == '(' || ch == '[' || ch == '{' {
-			depth++
-		}
-		if ch == ')' || ch == ']' || ch == '}' {
-			depth--
-		}
-		if ch == ',' && depth == 0 {
-			part := value[start:i]
-			trimmed := strings.TrimSpace(part)
-			leading := len(part) - len(strings.TrimLeft(part, " \t"))
-			result = append(result, argumentRange{text: trimmed, start: start + leading, end: start + leading + len(trimmed)})
-			start = i + 1
-		}
-	}
-	last := strings.TrimSpace(value[start:])
-	if last != "" {
-		part := value[start:]
-		leading := len(part) - len(strings.TrimLeft(part, " \t"))
-		result = append(result, argumentRange{text: last, start: start + leading, end: start + leading + len(last)})
-	}
-	return result
 }
 
 func primitiveArgumentType(value string) (string, bool) {

@@ -64,6 +64,14 @@ lines, and line-ending conventions, and map parser diagnostics back to the
 original Xeto document. The same facility would help formatters and future
 Xeto-aware tools.
 
+## Xeto: explicit function receiver semantics
+
+Expose whether a `Func` parameter is the implicit receiver for member/pipe
+calls, rather than requiring tooling to infer receiver behavior from a
+parameter name or call spelling. An explicit receiver role would let call
+validation bind positional arguments consistently for ordinary and member
+calls, and would improve signature help and generated documentation.
+
 ## Follow-up process
 
 - Verify each proposal against current upstream behavior and terminology.
