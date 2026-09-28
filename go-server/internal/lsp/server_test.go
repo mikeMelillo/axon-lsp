@@ -488,6 +488,26 @@ func TestAxonReferenceLiteralHasRefHoverType(t *testing.T) {
 	}
 }
 
+func TestLiteralHoverUsesAxonExpressionSpans(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		source string
+		cursor int
+		want   string
+	}{
+		{source: `call(-12.5e-2)`, cursor: 7, want: "Number"},
+		{source: `call(r"raw")`, cursor: 7, want: "Str"},
+		{source: "call(`fan://site`)", cursor: 9, want: "Uri"},
+		{source: `call(["item", 2])`, cursor: 10, want: "List"},
+		{source: `call({key: "value"})`, cursor: 12, want: "Dict"},
+	}
+	for _, test := range tests {
+		if got, ok := literalAt(test.source, test.cursor); !ok || got != test.want {
+			t.Errorf("literalAt(%q, %d) = %q, %t; want %q", test.source, test.cursor, got, ok, test.want)
+		}
+	}
+}
+
 func TestHoverOnQualifiedReferenceTreatsItAsOneLiteral(t *testing.T) {
 	t.Parallel()
 	server := NewServer(bytes.NewReader(nil), &bytes.Buffer{})

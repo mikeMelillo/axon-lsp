@@ -87,6 +87,7 @@ func (*MemberExpr) axonExpr()          {}
 type CallExpr struct {
 	Callee    Expr
 	Arguments []Expr
+	Open      SourceSpan
 	Source    SourceSpan
 }
 
@@ -415,7 +416,7 @@ func (p *expressionParser) parsePrefix() Expr {
 }
 
 func (p *expressionParser) parseCall(callee Expr) Expr {
-	p.consume()
+	open := p.consume()
 	arguments := []Expr{}
 	for p.atKind(TokenNewline) {
 		p.consume()
@@ -447,7 +448,7 @@ func (p *expressionParser) parseCall(callee Expr) Expr {
 	} else {
 		p.addError("expected ')' after arguments", end, end)
 	}
-	return &CallExpr{Callee: callee, Arguments: arguments, Source: mergeSpan(callee.Span(), spanOf(end))}
+	return &CallExpr{Callee: callee, Arguments: arguments, Open: spanOf(open), Source: mergeSpan(callee.Span(), spanOf(end))}
 }
 
 func (p *expressionParser) parseIndex(receiver Expr) Expr {
@@ -739,4 +740,119 @@ func mergeSpan(start, end SourceSpan) SourceSpan {
 
 func (e ParseError) Error() string {
 	return fmt.Sprintf("%s at %d:%d", e.Message, e.Source.Start.Line, e.Source.Start.Character)
+}
+
+// CallContext describes the innermost call containing a cursor position.
+type CallContext struct {
+	Name             string
+	ActiveArgument   int
+	ActiveParameter  int
+	ImplicitReceiver bool
+	Call             *CallExpr
+}
+
+// CallAt returns the innermost call containing position, including incomplete
+// calls being edited. Position is relative to source.
+func CallAt(source string, position Position) (CallContext, bool) {
+	parsed := Parse(source)
+	var best CallContext
+	bestSize := int(^uint(0) >> 1)
+	found := false
+	visit := func(node Expr) {}
+	visit = func(node Expr) {
+		if node == nil {
+			return
+		}
+		if call, ok := node.(*CallExpr); ok {
+			name, nameOK := callName(call.Callee)
+			if nameOK && positionAtOrAfter(position, call.Open.End) && positionAtOrBefore(position, call.Span().End) {
+				size := call.Span().EndOffset - call.Span().StartOffset
+				if size < bestSize {
+					active := 0
+					for _, arg := range call.Arguments {
+						if positionAfter(position, arg.Span().End) {
+							active++
+						} else {
+							break
+						}
+					}
+					_, implicitReceiver := call.Callee.(*MemberExpr)
+					activeParameter := active
+					if implicitReceiver {
+						activeParameter++
+					}
+					best = CallContext{Name: name, ActiveArgument: active, ActiveParameter: activeParameter, ImplicitReceiver: implicitReceiver, Call: call}
+					bestSize = size
+					found = true
+				}
+			}
+		}
+		for _, child := range children(node) {
+			visit(child)
+		}
+	}
+	for _, expression := range parsed.Expressions {
+		visit(expression)
+	}
+	return best, found
+}
+
+func callName(callee Expr) (string, bool) {
+	switch value := callee.(type) {
+	case *NameExpr:
+		return value.Name, true
+	case *MemberExpr:
+		return value.Name, true
+	default:
+		return "", false
+	}
+}
+
+func positionAtOrAfter(left, right Position) bool {
+	return left.Line > right.Line || left.Line == right.Line && left.Character >= right.Character
+}
+
+func positionAtOrBefore(left, right Position) bool {
+	return left.Line < right.Line || left.Line == right.Line && left.Character <= right.Character
+}
+
+func positionAfter(left, right Position) bool {
+	return left.Line > right.Line || left.Line == right.Line && left.Character > right.Character
+}
+
+func children(expression Expr) []Expr {
+	switch value := expression.(type) {
+	case *GroupExpr:
+		return []Expr{value.Expression}
+	case *UnaryExpr:
+		return []Expr{value.Operand}
+	case *ControlExpr:
+		return []Expr{value.Expression}
+	case *BinaryExpr:
+		return []Expr{value.Left, value.Right}
+	case *MemberExpr:
+		return []Expr{value.Receiver}
+	case *CallExpr:
+		return append([]Expr{value.Callee}, value.Arguments...)
+	case *IndexExpr:
+		return []Expr{value.Receiver, value.Index}
+	case *LambdaExpr:
+		return []Expr{value.Body}
+	case *SequenceExpr:
+		return value.Expressions
+	case *ListExpr:
+		return value.Elements
+	case *MapExpr:
+		result := make([]Expr, 0, len(value.Entries)*2)
+		for _, entry := range value.Entries {
+			result = append(result, entry.Key, entry.Value)
+		}
+		return result
+	case *IfExpr:
+		return []Expr{value.Condition, value.Then, value.Else}
+	case *TryExpr:
+		return []Expr{value.Body, value.Catch}
+	default:
+		return nil
+	}
 }

@@ -54,7 +54,10 @@ For editor use, the API should also support error-tolerant parsing and partial
 ASTs while a user is typing, with stable node/token kinds and source maps from
 embedded Axon fragments back to the containing Xeto/Trio document. Without
 those guarantees, every editor tool must rebuild both recovery behavior and
-host-offset mapping itself.
+host-offset mapping itself. A call-context API should also expose the active
+argument at a cursor, including nested and incomplete calls, and identify when
+a member-call receiver occupies an implicit parameter position; this is needed
+for reliable signature help.
 
 ## Xeto: embedded Axon source-map contract
 

@@ -945,86 +945,137 @@ func isIdentifierChar(ch byte) bool {
 }
 
 func literalAt(line string, character int) (string, bool) {
-	if axon.RefLiteralAt(line, character) {
-		return "Ref", true
+	if character < 0 {
+		return "", false
 	}
-	if typeName, ok := collectionLiteralAt(line, character); ok {
-		return typeName, true
-	}
-	for i := 0; i < len(line); i++ {
-		if line[i] == '"' || line[i] == '\'' {
-			quote := line[i]
-			end := i + 1
-			for end < len(line) && line[end] != quote {
-				end++
-			}
-			if character >= i && character <= end {
-				return "Str", true
-			}
-			i = end
-			continue
-		}
-		if (line[i] >= '0' && line[i] <= '9') && (i == 0 || (line[i-1] < 'a' || line[i-1] > 'z')) {
-			end := i + 1
-			for end < len(line) && ((line[end] >= '0' && line[end] <= '9') || line[end] == '.') {
-				end++
-			}
-			if character >= i && character <= end {
-				return "Number", true
-			}
-			i = end - 1
-		}
-	}
-	return "", false
-}
-
-func collectionLiteralAt(line string, character int) (string, bool) {
-	stack := []int{}
-	for i, ch := range line {
-		switch ch {
-		case '[', '{':
-			stack = append(stack, i)
-		case ']', '}':
-			if len(stack) == 0 {
-				continue
-			}
-			start := stack[len(stack)-1]
-			stack = stack[:len(stack)-1]
-			if character >= start && character <= i {
-				if line[start] == '[' && ch == ']' {
-					return "List", true
-				}
-				if line[start] == '{' && ch == '}' {
-					return "Dict", true
-				}
-			}
+	result := axon.Parse(line)
+	for _, expression := range result.Expressions {
+		if typeName, ok := literalTypeAt(expression, character); ok {
+			return typeName, true
 		}
 	}
 	return "", false
 }
 
 func literalType(value string) (string, bool) {
-	value = strings.TrimSpace(value)
-	if axon.IsRefLiteral(value) {
-		return "Ref", true
+	result := axon.Parse(strings.TrimSpace(value))
+	if len(result.Expressions) != 1 {
+		return "", false
 	}
-	if value == "[]" || (strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]")) {
+	return expressionLiteralType(result.Expressions[0])
+}
+
+func literalTypeAt(expression axon.Expr, character int) (string, bool) {
+	if expression == nil {
+		return "", false
+	}
+	span := expression.Span()
+	if span.Start.Line == 0 && span.End.Line == 0 && character >= span.Start.Character && character <= span.End.Character {
+		if typeName, ok := expressionLiteralType(expression); ok {
+			return typeName, true
+		}
+	}
+	switch value := expression.(type) {
+	case *axon.GroupExpr:
+		return literalTypeAt(value.Expression, character)
+	case *axon.UnaryExpr:
+		return literalTypeAt(value.Operand, character)
+	case *axon.BinaryExpr:
+		if typeName, ok := literalTypeAt(value.Left, character); ok {
+			return typeName, true
+		}
+		return literalTypeAt(value.Right, character)
+	case *axon.MemberExpr:
+		return literalTypeAt(value.Receiver, character)
+	case *axon.CallExpr:
+		if typeName, ok := literalTypeAt(value.Callee, character); ok {
+			return typeName, true
+		}
+		for _, argument := range value.Arguments {
+			if typeName, ok := literalTypeAt(argument, character); ok {
+				return typeName, true
+			}
+		}
+	case *axon.IndexExpr:
+		if typeName, ok := literalTypeAt(value.Receiver, character); ok {
+			return typeName, true
+		}
+		return literalTypeAt(value.Index, character)
+	case *axon.ListExpr:
+		for _, element := range value.Elements {
+			if typeName, ok := literalTypeAt(element, character); ok {
+				return typeName, true
+			}
+		}
+	case *axon.MapExpr:
+		for _, entry := range value.Entries {
+			if typeName, ok := literalTypeAt(entry.Key, character); ok {
+				return typeName, true
+			}
+			if typeName, ok := literalTypeAt(entry.Value, character); ok {
+				return typeName, true
+			}
+		}
+	case *axon.IfExpr:
+		for _, child := range []axon.Expr{value.Condition, value.Then, value.Else} {
+			if typeName, ok := literalTypeAt(child, character); ok {
+				return typeName, true
+			}
+		}
+	case *axon.SequenceExpr:
+		for _, child := range value.Expressions {
+			if typeName, ok := literalTypeAt(child, character); ok {
+				return typeName, true
+			}
+		}
+	case *axon.LambdaExpr:
+		return literalTypeAt(value.Body, character)
+	case *axon.TryExpr:
+		if typeName, ok := literalTypeAt(value.Body, character); ok {
+			return typeName, true
+		}
+		return literalTypeAt(value.Catch, character)
+	case *axon.ControlExpr:
+		return literalTypeAt(value.Expression, character)
+	}
+	return "", false
+}
+
+func expressionLiteralType(expression axon.Expr) (string, bool) {
+	switch value := expression.(type) {
+	case *axon.GroupExpr:
+		return expressionLiteralType(value.Expression)
+	case *axon.UnaryExpr:
+		if value.Operator == "-" || value.Operator == "+" {
+			if typeName, ok := expressionLiteralType(value.Operand); ok && typeName == "Number" {
+				return "Number", true
+			}
+		}
+	case *axon.LiteralExpr:
+		switch value.Kind {
+		case axon.TokenReference:
+			return "Ref", true
+		case axon.TokenNumber:
+			return "Number", true
+		case axon.TokenString:
+			if strings.HasPrefix(value.Value, "`") {
+				return "Uri", true
+			}
+			return "Str", true
+		case axon.TokenKeyword:
+			switch value.Value {
+			case "true", "false":
+				return "Bool", true
+			case "null":
+				return "null", true
+			case "na", "m":
+				return "Marker", true
+			}
+		}
+	case *axon.ListExpr:
 		return "List", true
-	}
-	if value == "{}" || (strings.HasPrefix(value, "{") && strings.HasSuffix(value, "}")) {
+	case *axon.MapExpr:
 		return "Dict", true
-	}
-	if len(value) >= 2 && ((value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'')) {
-		return "Str", true
-	}
-	if value == "true" || value == "false" {
-		return "Bool", true
-	}
-	if value == "null" {
-		return "null", true
-	}
-	if _, err := strconv.ParseFloat(strings.TrimSuffix(value, "f"), 64); err == nil {
-		return "Number", true
 	}
 	return "", false
 }
@@ -1072,73 +1123,15 @@ func callAtPosition(region embeddedRegionView, pos index.Position) (string, int,
 	if pos.Line < 0 || pos.Line >= len(region.lines) {
 		return "", 0, false
 	}
-	prefix := strings.Join(region.lines[:pos.Line], "\n")
-	line := region.lines[pos.Line]
-	if pos.Character < len(line) {
-		line = line[:pos.Character]
+	character := pos.Character
+	if character > len(region.lines[pos.Line]) {
+		character = len(region.lines[pos.Line])
 	}
-	prefix += line
-	stack := []int{}
-	var quote byte
-	for i := 0; i < len(prefix); i++ {
-		if quote != 0 {
-			if prefix[i] == quote && (i == 0 || prefix[i-1] != '\\') {
-				quote = 0
-			}
-			continue
-		}
-		if prefix[i] == '"' || prefix[i] == '\'' || prefix[i] == '`' {
-			quote = prefix[i]
-			continue
-		}
-		if prefix[i] == '(' {
-			stack = append(stack, i)
-		} else if prefix[i] == ')' && len(stack) > 0 {
-			stack = stack[:len(stack)-1]
-		}
-	}
-	if len(stack) == 0 {
+	context, ok := axon.CallAt(strings.Join(region.lines, "\n"), axon.Position{Line: pos.Line, Character: character})
+	if !ok {
 		return "", 0, false
 	}
-	open := stack[len(stack)-1]
-	depth := 0
-	commas := 0
-	quote = 0
-	for i := open; i < len(prefix); i++ {
-		if quote != 0 {
-			if prefix[i] == quote && (i == 0 || prefix[i-1] != '\\') {
-				quote = 0
-			}
-			continue
-		}
-		if prefix[i] == '"' || prefix[i] == '\'' || prefix[i] == '`' {
-			quote = prefix[i]
-			continue
-		}
-		switch prefix[i] {
-		case '(':
-			depth++
-		case ')':
-			depth--
-		case ',':
-			if depth == 1 {
-				commas++
-			}
-		}
-		if depth == 0 {
-			return "", 0, false
-		}
-	}
-	nameEnd := open
-	nameStart := nameEnd - 1
-	for nameStart >= 0 && (prefix[nameStart] == '_' || prefix[nameStart] >= 'a' && prefix[nameStart] <= 'z' || prefix[nameStart] >= 'A' && prefix[nameStart] <= 'Z' || prefix[nameStart] >= '0' && prefix[nameStart] <= '9') {
-		nameStart--
-	}
-	name := prefix[nameStart+1 : nameEnd]
-	if name == "" {
-		return "", 0, false
-	}
-	return name, commas, true
+	return context.Name, context.ActiveParameter, true
 }
 
 func (s *Server) validateEmbeddedAxon(uri, doc string) []index.Diagnostic {

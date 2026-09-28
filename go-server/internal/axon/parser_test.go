@@ -147,3 +147,19 @@ func TestParseTreatsMultilineBlockCommentAsStatementBoundary(t *testing.T) {
 		t.Fatalf("multiline comment should preserve a statement boundary: %#v", result)
 	}
 }
+
+func TestCallAtTracksNestedMultilineAndImplicitReceiverArguments(t *testing.T) {
+	source := "foo(\n  1,\n  bar(2,\n    3),\n  "
+	context, ok := CallAt(source, Position{Line: 4, Character: 2})
+	if !ok || context.Name != "foo" || context.ActiveArgument != 2 {
+		t.Fatalf("unexpected outer call context: %#v ok=%t", context, ok)
+	}
+	context, ok = CallAt(source, Position{Line: 3, Character: 5})
+	if !ok || context.Name != "bar" || context.ActiveArgument != 1 {
+		t.Fatalf("unexpected nested call context: %#v ok=%t", context, ok)
+	}
+	context, ok = CallAt("thing.fn(1, ", Position{Line: 0, Character: len("thing.fn(1, ")})
+	if !ok || context.Name != "fn" || !context.ImplicitReceiver || context.ActiveParameter != 2 {
+		t.Fatalf("member call should account for implicit receiver: %#v ok=%t", context, ok)
+	}
+}
