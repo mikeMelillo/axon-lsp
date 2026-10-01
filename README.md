@@ -1,10 +1,10 @@
 # Axon Language Server (axon-lsp)
 
-> **0.3.5 Update**: The extension has gone through some serious updates from 0.1->0.3, namely a complete rewrite in Golang. The extension no longer has any external dependencies (python, libs, etc.). It has been primarily driven on Linux & Windows, but the binaries are also available for MacOS
+> **0.3.5 Update**: The extension has gone through some serious updates from 0.1->0.3, namely a complete rewrite in Golang. The extension no longer has any external dependencies (python, libs, etc.). It has been primarily developed and tested on Linux & Windows, but the binaries are also available for MacOS
 
 A VS Code extension that provides Language Server Protocol support for the Axon programming language used in SkySpark and Haxall.
 
-This project is still very much a practical tool built in the open. The near-term goal is to make Axon development in VS Code feel lightweight and dependable around the Haxall 3.1.12 era, while laying the groundwork for the 4.x/Xeto shift that is coming next.
+This project is very much a practical tool built in the open. The near-term goal is to make Axon development in VS Code feel lightweight and dependable around the Haxall 3.1.12 era, while laying the groundwork for the 4.x/Xeto shift.
 
 ## Features
 
@@ -84,21 +84,81 @@ The current parser/indexer supports:
 
 The extension keeps a compact cached backstop rather than shipping the full Haxall source tree, which keeps installs smaller and startup more predictable.
 
-## Building
+## Understanding the Project
 
-```bash
-# Refresh the bundled function cache
-npm run build:cache
+Axon is the language this extension analyzes, but it is usually written inside
+another file format rather than opened as a standalone `.axon` document. Axon
+source commonly appears in `.trio` function records and in embedded bodies in
+`.xeto` files. `.fan` files are useful as a source of `@Axon` function
+definitions and metadata.
 
-# Compile the extension and all Go server binaries
-npm run build:all
+The file types play different roles:
 
-# Compile the extension and only this machine's Go server binary
-npm run build:server:dev
+- **Axon** is the expression language: function calls, local variables,
+  literals, lambdas, and related expressions.
+- **Trio** is a host format for records, including function records whose
+  `src` field can contain Axon.
+- **Xeto** describes Specs and functions, including parameter and return types;
+  a Xeto `Func` can also contain an embedded Axon body.
+- **Fantom** source can provide `@Axon` function definitions for indexing.
 
-# Package a full VSIX in ./build
-npm run package
+When Axon is embedded, the server extracts the Axon region, analyzes it, and
+maps editor features back to positions in the host document. Syntax coloring
+comes from the TextMate grammars in `syntaxes/`; parsing, symbol lookup, and
+diagnostics are handled by the Go server.
+
+### Client and Server
+
+The VS Code client is a small TypeScript layer that starts the language server
+and connects it to VS Code using the Language Server Protocol (LSP). Most
+language behavior lives in the Go server:
+
+```text
+VS Code  ⇄  client/src/extension.ts  ⇄  Go language server
+                                          ├─ parse and extract source
+                                          ├─ index and resolve symbols
+                                          └─ answer LSP requests
 ```
+
+The main developer entry points are:
+
+| Path | Responsibility |
+| --- | --- |
+| `client/src/extension.ts` | Extension activation, configuration, and server startup |
+| `go-server/cmd/axon-lsp/` | Go language-server executable |
+| `go-server/internal/lsp/` | LSP request handling and coordination |
+| `go-server/internal/axon/` | Axon tokens, expression AST, source spans, and call context |
+| `go-server/internal/diag/` | Semantic diagnostics and call-argument validation |
+| `go-server/internal/index/` | Function, Spec, definition, and reference indexes |
+| `go-server/internal/scope/` | Local-variable and parameter scope analysis |
+| `go-server/internal/trio/` | Trio parsing and embedded Axon extraction |
+| `go-server/internal/xeto/` | Xeto parsing, function metadata, and embedded Axon extraction |
+| `go-server/internal/fantom/` | Fantom `@Axon` source indexing |
+| `go-server/internal/cache/` | Loading bundled function metadata |
+| `syntaxes/` | TextMate grammars for editor coloring |
+| `scripts/` | Build and cache-generation scripts |
+
+### How an Editor Request Is Resolved
+
+For example, when the server analyzes an embedded Axon function in a Xeto
+document, the work is roughly:
+
+1. The LSP layer identifies the Xeto function and its embedded Axon body.
+2. The Axon lexer and parser produce tokens and source-spanned expressions.
+3. Scope analysis distinguishes local bindings from global names.
+4. The index supplies known functions, Specs, signatures, and source locations.
+5. Diagnostics or editor results are mapped back to the original Xeto
+   document.
+
+Trio has a corresponding extraction path for Axon in `src` fields. Function
+definitions and metadata may come from the workspace, configured source roots,
+or the bundled cache; the configured precedence is described above.
+
+Some existing analysis still uses line-oriented scanning alongside the Axon
+AST. The AST is used for structured expression and call analysis, while older
+scanning helpers remain in parts of the validation and reference paths. For
+feature-specific implementation details, start in `internal/lsp/` and follow
+the call into the responsible package.
 
 ### Local Debugging
 
