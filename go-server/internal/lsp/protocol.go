@@ -37,9 +37,9 @@ type initializationOptions struct {
 }
 
 type settingsPayload struct {
-	HaxallPaths              []string `json:"haxallPaths"`
 	ExternalPaths            []string `json:"externalPaths"`
 	IndexAllWorkspaceFolders bool     `json:"indexAllWorkspaceFolders"`
+	IgnoreBundledXetoCache   bool     `json:"ignoreBundledXetoCache"`
 	Mode                     string   `json:"mode"`
 	WarnMissingArguments     *bool    `json:"warnMissingArguments"`
 }

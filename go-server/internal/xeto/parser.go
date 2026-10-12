@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/lexer"
@@ -28,18 +29,19 @@ type EmbeddedAxonRegion struct {
 }
 
 type ParsedFunction struct {
-	Name       string
-	Doc        string
-	ArgsStr    string
-	Params     []string
-	ParamTypes map[string]string
-	ReturnType string
-	URI        string
-	StartLine  int
-	StartChar  int
-	EndLine    int
-	EndChar    int
-	Embedded   *EmbeddedAxonRegion
+	Name          string
+	Doc           string
+	ArgsStr       string
+	Params        []string
+	ParamTypes    map[string]string
+	ParamDefaults map[string]string
+	ReturnType    string
+	URI           string
+	StartLine     int
+	StartChar     int
+	EndLine       int
+	EndChar       int
+	Embedded      *EmbeddedAxonRegion
 }
 
 var funcDeclPattern = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*Func\b`)
@@ -84,7 +86,7 @@ func ParseURIContent(uri, content string) map[string]ParsedFunction {
 		if !inFuncs {
 			if strings.Contains(line, "+Funcs") {
 				inFuncs = true
-				funcsDepth = strings.Count(line, "{") - strings.Count(line, "}")
+				funcsDepth = countBraceDelta(line)
 				if funcsDepth <= 0 {
 					funcsDepth = 1
 				}
@@ -97,30 +99,30 @@ func ParseURIContent(uri, content string) map[string]ParsedFunction {
 			name := match[1]
 			nameChar := strings.Index(line, name)
 			originalBlock, maskedBlock, endLine, endChar := captureFuncBlock(lines, originalLines, i)
-			params, paramTypes, argsStr, returnType, embedded := parseFuncSignature(originalBlock, maskedBlock, i)
+			params, paramTypes, paramDefaults, argsStr, returnType, embedded := parseFuncSignature(originalBlock, maskedBlock, i)
 			doc := strings.TrimSpace(strings.Join(cleanDocLines(pendingDoc), "\n"))
 			found[name] = ParsedFunction{
-				Name:       name,
-				Doc:        doc,
-				ArgsStr:    argsStr,
-				Params:     params,
-				ParamTypes: paramTypes,
-				ReturnType: returnType,
-				URI:        uri,
-				StartLine:  i,
-				StartChar:  max(nameChar, 0),
-				EndLine:    endLine,
-				EndChar:    endChar,
-				Embedded:   embedded,
+				Name:          name,
+				Doc:           doc,
+				ArgsStr:       argsStr,
+				Params:        params,
+				ParamTypes:    paramTypes,
+				ParamDefaults: paramDefaults,
+				ReturnType:    returnType,
+				URI:           uri,
+				StartLine:     i,
+				StartChar:     max(nameChar, 0),
+				EndLine:       endLine,
+				EndChar:       endChar,
+				Embedded:      embedded,
 			}
 			pendingDoc = nil
 			i = endLine
 			funcsDepth += countBraceDelta(maskedBlock)
-			funcsDepth--
 			continue
 		}
 
-		funcsDepth += strings.Count(line, "{") - strings.Count(line, "}")
+		funcsDepth += countBraceDelta(line)
 		if funcsDepth <= 0 {
 			inFuncs = false
 			funcsDepth = 0
@@ -175,7 +177,6 @@ func fallbackEmbeddedRegion(content string, targetLine int) (*EmbeddedAxonRegion
 }
 
 func captureFuncBlock(lines, originalLines []string, start int) (string, string, int, int) {
-	braceDepth := 0
 	var originalBuilder strings.Builder
 	var maskedBuilder strings.Builder
 	for i := start; i < len(lines); i++ {
@@ -186,28 +187,41 @@ func captureFuncBlock(lines, originalLines []string, start int) (string, string,
 		}
 		originalBuilder.WriteString(originalLines[i])
 		maskedBuilder.WriteString(line)
-		braceDepth += strings.Count(line, "{") - strings.Count(line, "}")
-		if braceDepth <= 0 && strings.Contains(line, "}") {
-			return originalBuilder.String(), maskedBuilder.String(), i, strings.LastIndex(line, "}") + 1
+		structural := structuralText(maskedBuilder.String())
+		depth := 0
+		for end, c := range structural {
+			if c == '{' {
+				depth++
+			} else if c == '}' {
+				depth--
+				if depth == 0 {
+					lineStart := strings.LastIndex(structural[:end], "\n") + 1
+					return originalBuilder.String()[:end+1], maskedBuilder.String()[:end+1], i, end - lineStart + 1
+				}
+			}
 		}
 	}
 	last := len(lines) - 1
 	return originalBuilder.String(), maskedBuilder.String(), last, len(lines[last])
 }
 
-func parseFuncSignature(originalBlock, maskedBlock string, blockStartLine int) ([]string, map[string]string, string, string, *EmbeddedAxonRegion) {
-	bodyStart := strings.Index(maskedBlock, "{")
-	bodyEnd := strings.LastIndex(maskedBlock, "}")
+func parseFuncSignature(originalBlock, maskedBlock string, blockStartLine int) ([]string, map[string]string, map[string]string, string, string, *EmbeddedAxonRegion) {
+	structural := structuralText(maskedBlock)
+	bodyStart := strings.Index(structural, "{")
+	bodyEnd := strings.LastIndex(structural, "}")
 	if bodyStart < 0 || bodyEnd <= bodyStart {
-		return nil, nil, "()", "", nil
+		return nil, nil, nil, "()", "", nil
 	}
 	maskedBody := maskedBlock[bodyStart+1 : bodyEnd]
 	originalBody := originalBlock[bodyStart+1 : bodyEnd]
+	bodyLine := blockStartLine + strings.Count(maskedBlock[:bodyStart+1], "\n")
 	lines := strings.Split(maskedBody, "\n")
 	originalLines := strings.Split(originalBody, "\n")
 	inAxon := false
 	params := []string{}
 	paramTypes := map[string]string{}
+	paramDefaults := map[string]string{}
+	signatureLines := []string{}
 	argLabels := []string{}
 	returnType := ""
 	bodyLines := []string{}
@@ -222,33 +236,52 @@ func parseFuncSignature(originalBlock, maskedBlock string, blockStartLine int) (
 			}
 			continue
 		}
-		if strings.Contains(line, "<axon:---") {
+		if strings.HasPrefix(line, "<axon:---") {
 			inAxon = true
-			bodyStartLine = blockStartLine + idx + 1
+			bodyStartLine = bodyLine + idx + 1
 			continue
 		}
 		if inAxon {
-			if strings.Contains(line, "--->") {
+			if strings.HasPrefix(line, "--->") {
 				inAxon = false
-				bodyEndLine = blockStartLine + idx - 1
+				bodyEndLine = bodyLine + idx - 1
 				continue
 			}
 			bodyLines = append(bodyLines, originalLine)
 			continue
 		}
-		for _, token := range splitSignatureTokens(line) {
-			name, value, ok := parseSlot(token)
-			if !ok {
-				continue
-			}
-			if name == "returns" {
-				returnType = value
-				continue
-			}
-			params = append(params, name)
-			paramTypes[name] = value
-			argLabels = append(argLabels, name+": "+value)
+		signatureLines = append(signatureLines, rawLine)
+	}
+	for _, token := range splitSignatureTokens(strings.Join(signatureLines, "\n")) {
+		name, value, ok := parseSlot(token)
+		if !ok {
+			continue
 		}
+		typeName, metadata := splitSlotMetadata(value)
+		for _, meta := range splitSignatureTokens(metadata) {
+			if strings.TrimSpace(meta) == "maybe" && !strings.HasSuffix(typeName, "?") {
+				typeName += "?"
+			}
+		}
+		if name == "returns" {
+			returnType = typeName
+			continue
+		}
+		params = append(params, name)
+		paramTypes[name] = typeName
+		label := name + ": " + typeName
+		if metadata != "" {
+			for _, meta := range splitSignatureTokens(metadata) {
+				key, source, ok := parseSlot(meta)
+				if ok && key == "axon" {
+					if decoded, err := strconv.Unquote(source); err == nil {
+						paramDefaults[name] = decoded
+						label += " = " + decoded
+					}
+				}
+			}
+		}
+		argLabels = append(argLabels, label)
 	}
 	argsStr := "()"
 	if len(argLabels) > 0 {
@@ -261,19 +294,83 @@ func parseFuncSignature(originalBlock, maskedBlock string, blockStartLine int) (
 		}
 		region = &EmbeddedAxonRegion{Text: strings.Join(bodyLines, "\n"), StartLine: bodyStartLine, EndLine: bodyEndLine}
 	}
-	return params, paramTypes, argsStr, returnType, region
+	return params, paramTypes, paramDefaults, argsStr, returnType, region
 }
 
 func splitSignatureTokens(line string) []string {
-	parts := strings.Split(line, ",")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(strings.TrimSuffix(part, "{"))
-		if part != "" {
-			result = append(result, part)
+	result := []string{}
+	start, depth := 0, 0
+	var quote byte
+	escaped := false
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+			} else if c == '\\' {
+				escaped = true
+			} else if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		if c == '"' || c == '\'' || c == '`' {
+			quote = c
+			continue
+		}
+		switch c {
+		case '<', '{', '[', '(':
+			depth++
+		case '>', '}', ']', ')':
+			depth--
+		case ',', '\n':
+			if depth == 0 {
+				if part := strings.TrimSpace(line[start:i]); part != "" {
+					result = append(result, part)
+				}
+				start = i + 1
+			}
 		}
 	}
+	if part := strings.TrimSpace(line[start:]); part != "" {
+		result = append(result, part)
+	}
 	return result
+}
+
+// Metadata is not part of the declared type, including for structured types.
+func splitSlotMetadata(value string) (string, string) {
+	depth := 0
+	var quote byte
+	escaped := false
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+			} else if c == '\\' {
+				escaped = true
+			} else if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		if c == '"' || c == '\'' || c == '`' {
+			quote = c
+			continue
+		}
+		switch c {
+		case '{', '[', '(':
+			depth++
+		case '}', ']', ')':
+			depth--
+		case '<':
+			if depth == 0 {
+				return strings.TrimSpace(value[:i]), strings.TrimSuffix(strings.TrimSpace(value[i+1:]), ">")
+			}
+		}
+	}
+	return strings.TrimSpace(value), ""
 }
 
 func parseSlot(token string) (string, string, bool) {
@@ -283,11 +380,13 @@ func parseSlot(token string) (string, string, bool) {
 	}
 	name := strings.TrimSpace(parts[0])
 	value := strings.TrimSpace(parts[1])
-	if name == "" || value == "" {
+	if !regexpSlotName.MatchString(name) || value == "" {
 		return "", "", false
 	}
-	return name, strings.TrimSpace(strings.TrimSuffix(value, "}")), true
+	return name, value, true
 }
+
+var regexpSlotName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func cleanDocLines(lines []string) []string {
 	cleaned := make([]string, 0, len(lines))
@@ -307,7 +406,56 @@ func cleanDocLines(lines []string) []string {
 }
 
 func countBraceDelta(content string) int {
+	content = structuralText(content)
 	return strings.Count(content, "{") - strings.Count(content, "}")
+}
+
+// Preserve offsets while hiding strings and metadata from structural brace scans.
+func structuralText(content string) string {
+	masked := []byte(content)
+	var quote byte
+	escaped, inline := false, false
+	depth := 0
+	for i := 0; i < len(content); i++ {
+		c := content[i]
+		hide := quote != 0 || depth > 0
+		if inline {
+			if quote != 0 {
+				if escaped {
+					escaped = false
+				} else if c == '\\' {
+					escaped = true
+				} else if c == quote {
+					quote = 0
+				}
+			} else if c == '"' || c == '\'' || c == '`' {
+				quote = c
+			} else if strings.HasPrefix(content[i:], "--->") {
+				inline = false
+			}
+		} else if quote != 0 {
+			if escaped {
+				escaped = false
+			} else if c == '\\' {
+				escaped = true
+			} else if c == quote {
+				quote = 0
+			}
+		} else if c == '"' || c == '\'' || c == '`' {
+			quote, hide = c, true
+		} else if c == '<' {
+			depth++
+			hide = true
+		} else if c == '>' && depth > 0 {
+			depth--
+		} else if depth > 0 && strings.HasPrefix(content[i:], "---") {
+			inline = true
+		}
+		if hide && c != '\n' {
+			masked[i] = ' '
+		}
+	}
+	return string(masked)
 }
 
 func max(a, b int) int {

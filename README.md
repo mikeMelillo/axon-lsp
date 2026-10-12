@@ -55,17 +55,41 @@ The extension works out of the box with its bundled function cache and workspace
 
 Available settings:
 
-- `axonLsp.haxallPaths`: paths to Haxall installations or source trees
-- `axonLsp.externalPaths`: additional directories to scan for Axon functions
+- `axonLsp.externalPaths`: additional source directories outside the workspace, including Haxall installations or source checkouts
 - `axonLsp.indexAllWorkspaceFolders`: index every folder in a multi-root VS Code workspace as local Axon sources
+- `axonLsp.ignoreBundledXetoCache`: ignore bundled Xeto function metadata while retaining workspace, external-path, and archive sources, plus the legacy defs cache (default: `false`)
+- `axonLsp.warnMissingArguments`: warn about omitted required arguments (default: `true`); explicit Xeto parameter defaults permit omission without changing the declared nullability
 
 Notes:
 
-- Configured Haxall and external paths are indexed recursively up to 4 directory levels below each root.
-- `axonLsp.haxallPaths` can point at a Haxall-style clone root; the server will walk down into likely source folders as long as they fall within that depth budget.
+- Configured external paths are indexed recursively up to 4 directory levels below each root for `.trio`, `.axon`, `.fan`, `.xeto`, and `.xetolib` sources.
+- `axonLsp.externalPaths` can point at a Haxall-style clone root; source folders must fall within that depth budget.
+- `axonLsp.haxallPaths` has been removed. Move its entries into `axonLsp.externalPaths` and remove the old setting. To preserve previous precedence, place the former Haxall paths before other external paths.
 - Multi-root indexing is disabled by default, so only the first VS Code workspace folder is scanned. Enabling it may increase startup time and memory usage for large workspaces.
-- If the same function exists in multiple places, the extension prefers workspace definitions first, then configured extra roots, then the bundled core cache.
+- If the same function exists in multiple places, requests prefer definitions in the current file, then workspace sources, then configured external roots, then the bundled core cache. Selected workspace folders form one index; there is no separate local/global workspace tier.
+- Within the workspace, editable sources take precedence over `.xetolib` entries. The same rule applies within each external root. Unsaved edits update lookup, completions, hover, signature help, definitions, and diagnostics for open documents; closing a buffer restores its disk content or falls back to the remaining sources.
+- Within `axonLsp.externalPaths`, earlier paths take precedence when functions have the same name. These paths do not control the bundled cache.
+- Enable `axonLsp.ignoreBundledXetoCache` to exclude bundled Xeto metadata from function lookup, completions, hover, signature help, definitions, and diagnostic resolution in every mode. Changes apply without restarting the server and refresh diagnostics for open documents. Legacy bundled defs remain available as fallback; this is not a workspace-only setting and does not remove bundled assets from the extension.
 - Enable VS Code's `editor.stickyScroll.enabled` setting to keep the current function declaration visible while scrolling through long bodies.
+
+### Xetolib Archives
+
+Workspace and external-path scans read `.xetolib` ZIP archives containing normal Xeto source trees, such as `example.lib/lib.xeto` and `example.lib/specs.xeto`. Each `.xeto` entry is indexed using the existing Xeto parser for callable functions and spec names; archives are read in memory without extracting files.
+
+- Go to Definition opens archive entries as read-only virtual source documents.
+- Archive replacement and deletion refresh the index and invalidate stale entries. Changes are watched in both workspace and configured external directories.
+- Build-output directory creation/removal triggers debounced reconciliation, including configured roots that do not exist yet. Archive updates refresh caller diagnostics and use bounded recovery retries for files observed mid-write. VS Code watcher exclusions or writes completing after the retry window can still require another event or a window reload.
+- Archives are source inputs only, not editable Xeto documents. Diagnostics still apply only to `.trio` and `.xeto` documents.
+- Library dependency resolution and library/version selection are not implemented; archives follow the existing source-root precedence.
+- Invalid archives are skipped. Each archive is limited to 128 MiB compressed input, 4,096 entries, 4 MiB of central-directory metadata, 8 MiB per decompressed entry, and 64 MiB total decompressed content. Unsafe entry paths and duplicate paths are rejected; non-Xeto resources also count toward these limits. ZIP64, multi-disk archives, and nonstandard layouts requiring ZIP offset recovery are unsupported.
+
+### Diagnostic Semantics
+
+Both `value.func()` and `value.func` are checked as dot calls, with the receiver bound to the first parameter. Undefined receivers are reported even when a function lacks signature metadata; declared values with unknown types are not treated as undefined.
+
+Xeto parameter types and defaults are indexed separately. For example, `opts: Dict? <axon:"null">` accepts explicit `null` and may be omitted, while `opts: Dict <axon:"null">` has an omission default but is not inferred to accept explicit `null`. Defaults are preserved as Axon source, not evaluated. Nullable parameters without explicit defaults retain the existing omission behavior. Date, Time, DateTime, and DateSpan literals are distinguished from numbers.
+
+Metadata not preserved by older bundled catalogs remains incomplete until those catalogs are regenerated. Structural Xeto conformance and complete position-aware variable type inference remain outside the current diagnostic scope.
 
 ## How It Works
 

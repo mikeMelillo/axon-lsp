@@ -38,3 +38,4 @@ client/src/**
 client/package.json
 client/package-lock.json
 client/tsconfig.json
+client/*.test.cjs

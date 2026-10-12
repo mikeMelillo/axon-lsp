@@ -21,7 +21,7 @@ unknown information does not produce a mismatch warning.
 
 - [x] Phase 0: Record baseline, cache provenance, and selection policy.
 - [x] Phase 1: Shared token-aware analysis with scoped, source-ordered bindings.
-- [x] Phase 2: Complete structured signatures and contextual resolution.
+- [x] Phase 2: Structured names, types, returns, explicit defaults, and contextual resolution. Older bundled catalogs may lack default metadata.
 - [x] Phase 3: Call-aware signature help with active-parameter tracking.
 - [x] Phase 4: Receiver and argument type-ranked completion.
 - [~] Phase 5: Conservative argument mismatch diagnostics.
@@ -29,7 +29,8 @@ unknown information does not produce a mismatch warning.
 
 ## Current Type Rules
 
-Known literals include strings, booleans, numbers, `null`, lists, and dicts.
+Known literals include strings, booleans, numbers, dates, times, datetimes,
+date spans, `null`, lists, and dicts.
 Function return signatures and enclosing function parameters may infer variable
 types. Unknown expressions remain unknown.
 
@@ -48,6 +49,13 @@ semantic modeling than this diagnostic pass provides.
 Phase 5 follow-ups are active: diagnostics must preserve complete expression
 ranges, distinguish unresolved identifiers from unknown types, and report
 missing required arguments only when signature metadata establishes them.
+
+Dot calls with and without parentheses validate their receiver as the first
+argument. Explicit Xeto `axon` default metadata permits omission; default
+presence is separate from nullable type metadata and is preserved through
+source/archive indexing and cache serialization. Nullable function returns
+are not treated as definite null values. Same-line declaration/use scope and
+complete variable type inference remain follow-ups.
 
 ## Acceptance Fixtures
 

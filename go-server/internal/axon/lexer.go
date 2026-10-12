@@ -285,7 +285,26 @@ func scanDateOrTime(source string, start int) int {
 	}
 	if digits(start, 4) && start+7 <= len(source) && source[start+4] == '-' && digits(start+5, 2) {
 		if start+10 <= len(source) && source[start+7] == '-' && digits(start+8, 2) {
-			return start + 10 // YYYY-MM-DD
+			end := start + 10
+			if end < len(source) && source[end] == 'T' {
+				timeEnd := scanDateOrTime(source, end+1)
+				if timeEnd > end+1 {
+					end = timeEnd
+					if end < len(source) && source[end] == 'Z' {
+						end++
+					} else if end+6 <= len(source) && (source[end] == '+' || source[end] == '-') && digits(end+1, 2) && source[end+3] == ':' && digits(end+4, 2) {
+						end += 6
+					}
+					// Named time zones are part of the DateTime literal.
+					if end+1 < len(source) && source[end] == ' ' && source[end+1] >= 'A' && source[end+1] <= 'Z' {
+						end += 2
+						for end < len(source) && (source[end] >= 'a' && source[end] <= 'z' || source[end] >= 'A' && source[end] <= 'Z' || source[end] == '_' || source[end] == '/') {
+							end++
+						}
+					}
+				}
+			}
+			return end
 		}
 		return start + 7 // YYYY-MM date span
 	}

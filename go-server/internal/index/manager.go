@@ -20,20 +20,23 @@ const (
 )
 
 type Manager struct {
-	mu                   sync.RWMutex
-	mode                 Mode
-	coreVariants         map[string][]cache.FunctionVariant
-	CoreFuncs            map[string]Symbol
-	ExternalFuncs        map[string]Symbol
-	LocalFuncs           map[string]Symbol
-	ReferencesMap        map[string][]Location
-	workspaceFileSymbols map[string]map[string]Symbol
-	externalFileSymbols  map[string]map[string]Symbol
-	workspaceFileSpecs   map[string]map[string]struct{}
-	externalFileSpecs    map[string]map[string]struct{}
-	documentSymbols      map[string][]DocumentSymbol
-	workspaceRoots       []ScanRoot
-	extraRoots           []ScanRoot
+	mu                     sync.RWMutex
+	mode                   Mode
+	ignoreBundledXetoCache bool
+	coreVariants           map[string][]cache.FunctionVariant
+	CoreFuncs              map[string]Symbol
+	ExternalFuncs          map[string]Symbol
+	LocalFuncs             map[string]Symbol
+	ReferencesMap          map[string][]Location
+	workspaceFileSymbols   map[string]map[string]Symbol
+	externalFileSymbols    map[string]map[string]Symbol
+	workspaceFileSpecs     map[string]map[string]struct{}
+	externalFileSpecs      map[string]map[string]struct{}
+	documentSymbols        map[string][]DocumentSymbol
+	workspaceRoots         []ScanRoot
+	extraRoots             []ScanRoot
+	archives               map[string]archiveSource
+	archiveOwners          map[string]string
 }
 
 func NewManager() (*Manager, error) {
@@ -53,6 +56,8 @@ func NewManager() (*Manager, error) {
 		workspaceFileSpecs:   map[string]map[string]struct{}{},
 		externalFileSpecs:    map[string]map[string]struct{}{},
 		documentSymbols:      map[string][]DocumentSymbol{},
+		archives:             map[string]archiveSource{},
+		archiveOwners:        map[string]string{},
 	}
 	mgr.rebuildCoreFuncsLocked()
 	return mgr, nil
@@ -88,6 +93,14 @@ func (m *Manager) SetMode(mode Mode) {
 		m.mode = ModeAuto
 	}
 	m.rebuildCoreFuncsLocked()
+	m.rebuildLocalFuncsLocked()
+}
+
+func (m *Manager) SetIgnoreBundledXetoCache(ignore bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ignoreBundledXetoCache = ignore
+	m.rebuildCoreFuncsLocked()
 }
 
 func (m *Manager) UpdateLocalIndex(workspaceRoot string) {
@@ -99,6 +112,7 @@ func (m *Manager) SetWorkspaceRoots(roots []ScanRoot) {
 	fileSymbols := map[string]map[string]Symbol{}
 	fileSpecs := map[string]map[string]struct{}{}
 	docSymbols := map[string][]DocumentSymbol{}
+	archives := map[string]map[string]string{}
 	for _, root := range paths {
 		label := workspaceRootLabel(root)
 		scanRoot(root.Path, label, func(uri string, symbols map[string]Symbol, docs []DocumentSymbol) {
@@ -111,7 +125,7 @@ func (m *Manager) SetWorkspaceRoots(roots []ScanRoot) {
 			if len(docs) > 0 {
 				docSymbols[uri] = docs
 			}
-		})
+		}, func(path string, entries map[string]string) { archives[fileURI(path)] = entries })
 	}
 	m.mu.Lock()
 	removeDocumentSymbols(m.documentSymbols, m.workspaceFileSymbols, fileSymbols)
@@ -119,6 +133,7 @@ func (m *Manager) SetWorkspaceRoots(roots []ScanRoot) {
 	m.workspaceFileSymbols = fileSymbols
 	m.workspaceFileSpecs = fileSpecs
 	mergeDocumentSymbols(m.documentSymbols, docSymbols)
+	m.replaceArchivesLocked(OriginLocal, archives)
 	m.rebuildLocalFuncsLocked()
 	m.rebuildExternalFuncsLocked()
 	m.mu.Unlock()
@@ -129,6 +144,7 @@ func (m *Manager) SetExtraRoots(roots []ScanRoot) {
 	externalFileSymbols := map[string]map[string]Symbol{}
 	externalFileSpecs := map[string]map[string]struct{}{}
 	docSymbols := map[string][]DocumentSymbol{}
+	archives := map[string]map[string]string{}
 	m.mu.RLock()
 	workspaceRoots := append([]ScanRoot(nil), m.workspaceRoots...)
 	m.mu.RUnlock()
@@ -147,6 +163,10 @@ func (m *Manager) SetExtraRoots(roots []ScanRoot) {
 			if len(docs) > 0 {
 				docSymbols[uri] = docs
 			}
+		}, func(path string, entries map[string]string) {
+			if !isUnderAnyRoot(path, workspaceRoots) {
+				archives[fileURI(path)] = entries
+			}
 		})
 	}
 	m.mu.Lock()
@@ -155,11 +175,16 @@ func (m *Manager) SetExtraRoots(roots []ScanRoot) {
 	m.externalFileSymbols = externalFileSymbols
 	m.externalFileSpecs = externalFileSpecs
 	mergeDocumentSymbols(m.documentSymbols, docSymbols)
+	m.replaceArchivesLocked(OriginExternal, archives)
 	m.rebuildExternalFuncsLocked()
 	m.mu.Unlock()
 }
 
 func (m *Manager) UpdateDocument(uri, content string) {
+	if strings.HasPrefix(uri, "axon-ext:/xetolib/") || strings.EqualFold(filepath.Ext(pathFromURI(uri)), ".xetolib") {
+		return
+	}
+	uri = normalizeSourceURI(uri)
 	symbols, docs := parseURIContent(uri, content)
 	path := pathFromURI(uri)
 	m.mu.Lock()
@@ -195,8 +220,15 @@ func (m *Manager) UpdateDocument(uri, content string) {
 }
 
 func (m *Manager) RemoveDocument(uri string) {
+	if strings.HasPrefix(uri, "axon-ext:/xetolib/") {
+		return
+	}
+	uri = normalizeSourceURI(uri)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if strings.EqualFold(filepath.Ext(pathFromURI(uri)), ".xetolib") {
+		m.removeArchiveLocked(fileURI(pathFromURI(uri)))
+	}
 	delete(m.workspaceFileSymbols, uri)
 	delete(m.externalFileSymbols, uri)
 	delete(m.documentSymbols, uri)
@@ -221,9 +253,13 @@ func (m *Manager) HasSpecName(name string) bool {
 }
 
 func (m *Manager) GetCompletions() CompletionList {
+	return m.GetCompletionsForURI("")
+}
+
+func (m *Manager) GetCompletionsForURI(uri string) CompletionList {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	merged := m.mergedLocked()
+	merged := m.mergedLocked(normalizeSourceURI(uri))
 	items := make([]CompletionItem, 0, len(merged))
 	for _, symbol := range merged {
 		items = append(items, CompletionItem{
@@ -242,7 +278,7 @@ func (m *Manager) GetCompletions() CompletionList {
 func (m *Manager) GetDocumentSymbols(uri string) []DocumentSymbol {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	symbols := m.documentSymbols[uri]
+	symbols := m.documentSymbols[normalizeSourceURI(uri)]
 	copySymbols := make([]DocumentSymbol, len(symbols))
 	copy(copySymbols, symbols)
 	return copySymbols
@@ -302,18 +338,8 @@ func (m *Manager) GetDefinition(symbol string) *Location {
 }
 
 func (m *Manager) GetDefinitionForURI(symbol, uri string) *Location {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if loc := m.LocalFuncs[symbol].Location; loc != nil {
-		copy := *loc
-		return &copy
-	}
-	if loc := m.ExternalFuncs[symbol].Location; loc != nil {
-		copy := *loc
-		return &copy
-	}
-	core, _ := m.coreSymbolLocked(symbol, uri)
-	if loc := core.Location; loc != nil {
+	winner, ok := m.FindFunctionForURI(symbol, uri)
+	if loc := winner.Location; ok && loc != nil {
 		copy := *loc
 		return &copy
 	}
@@ -327,6 +353,13 @@ func (m *Manager) FindFunction(name string) (Symbol, bool) {
 func (m *Manager) FindFunctionForURI(name, uri string) (Symbol, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	uri = normalizeSourceURI(uri)
+	if symbol, ok := m.workspaceFileSymbols[uri][name]; ok {
+		return symbol, true
+	}
+	if symbol, ok := m.externalFileSymbols[uri][name]; ok {
+		return symbol, true
+	}
 	if symbol, ok := m.LocalFuncs[name]; ok {
 		return symbol, true
 	}
@@ -340,7 +373,7 @@ func (m *Manager) FindFunctionForURI(name, uri string) (Symbol, bool) {
 func (m *Manager) coreSymbolLocked(name, uri string) (Symbol, bool) {
 	if strings.HasSuffix(strings.ToLower(uri), ".xeto") {
 		if variants := m.coreVariants[name]; len(variants) > 0 {
-			variant, ok := resolveVariantForMode(variants, ModeSpecs)
+			variant, ok := m.resolveCoreVariantLocked(variants, ModeSpecs)
 			if ok {
 				return symbolFromVariant(variant), true
 			}
@@ -408,13 +441,20 @@ func (m *Manager) rebuildLocalFuncsLocked() {
 	for uri := range m.workspaceFileSymbols {
 		uris = append(uris, uri)
 	}
-	sort.Strings(uris)
+	m.sortSourceURIsLocked(uris)
 	for _, uri := range uris {
 		for name, symbol := range m.workspaceFileSymbols[uri] {
 			if !includeLocalSymbol(symbol, mode) {
 				continue
 			}
-			if existing, ok := local[name]; !ok || localSymbolRank(symbol, mode) < localSymbolRank(existing, mode) {
+			existing, ok := local[name]
+			// Editable sources outrank archives; model rank breaks ties within each class.
+			_, archive := m.archiveOwners[uri]
+			existingArchive := false
+			if existing.Location != nil {
+				_, existingArchive = m.archiveOwners[existing.Location.URI]
+			}
+			if !ok || (!archive && existingArchive) || (archive == existingArchive && localSymbolRank(symbol, mode) < localSymbolRank(existing, mode)) {
 				local[name] = symbol
 			}
 		}
@@ -427,12 +467,12 @@ func (m *Manager) rebuildExternalFuncsLocked() {
 	for _, root := range m.extraRoots {
 		uris := make([]string, 0)
 		for uri := range m.externalFileSymbols {
-			path := pathFromURI(uri)
+			path := m.sourcePathLocked(uri)
 			if isUnderRoot(path, root.Path) && !isUnderAnyRoot(path, m.workspaceRoots) {
 				uris = append(uris, uri)
 			}
 		}
-		sort.Strings(uris)
+		m.sortSourceURIsLocked(uris)
 		for _, uri := range uris {
 			for name, symbol := range m.externalFileSymbols[uri] {
 				if _, exists := external[name]; !exists {
@@ -447,7 +487,7 @@ func (m *Manager) rebuildExternalFuncsLocked() {
 func (m *Manager) rebuildCoreFuncsLocked() {
 	core := make(map[string]Symbol, len(m.coreVariants))
 	for name, variants := range m.coreVariants {
-		variant, ok := resolveVariantForMode(variants, m.mode)
+		variant, ok := m.resolveCoreVariantLocked(variants, m.mode)
 		if !ok {
 			continue
 		}
@@ -456,16 +496,36 @@ func (m *Manager) rebuildCoreFuncsLocked() {
 	m.CoreFuncs = core
 }
 
-func (m *Manager) mergedLocked() map[string]Symbol {
+func (m *Manager) resolveCoreVariantLocked(variants []cache.FunctionVariant, mode Mode) (cache.FunctionVariant, bool) {
+	if m.ignoreBundledXetoCache {
+		filtered := make([]cache.FunctionVariant, 0, len(variants))
+		for _, variant := range variants {
+			if variant.SourceModel != "specs" {
+				filtered = append(filtered, variant)
+			}
+		}
+		variants = filtered
+	}
+	return resolveVariantForMode(variants, mode)
+}
+
+func (m *Manager) mergedLocked(uri string) map[string]Symbol {
 	merged := make(map[string]Symbol, len(m.CoreFuncs)+len(m.ExternalFuncs)+len(m.LocalFuncs))
-	for k, v := range m.CoreFuncs {
-		merged[k] = v
+	for name := range m.CoreFuncs {
+		if symbol, ok := m.coreSymbolLocked(name, uri); ok {
+			merged[name] = symbol
+		}
 	}
 	for k, v := range m.ExternalFuncs {
 		merged[k] = v
 	}
 	for k, v := range m.LocalFuncs {
 		merged[k] = v
+	}
+	for _, files := range []map[string]map[string]Symbol{m.externalFileSymbols, m.workspaceFileSymbols} {
+		for name, symbol := range files[uri] {
+			merged[name] = symbol
+		}
 	}
 	return merged
 }
@@ -572,14 +632,15 @@ func fromXeto(parsed map[string]xeto.ParsedFunction) (map[string]Symbol, []Docum
 	docSymbols := make([]DocumentSymbol, 0, len(parsed))
 	for _, symbol := range parsed {
 		result[symbol.Name] = Symbol{
-			Name:       symbol.Name,
-			Kind:       KindFunction,
-			Doc:        normalizedDoc(symbol.Doc),
-			ArgsStr:    symbol.ArgsStr,
-			Params:     symbol.Params,
-			ParamTypes: symbol.ParamTypes,
-			ReturnType: symbol.ReturnType,
-			ItemKind:   3,
+			Name:          symbol.Name,
+			Kind:          KindFunction,
+			Doc:           normalizedDoc(symbol.Doc),
+			ArgsStr:       symbol.ArgsStr,
+			Params:        symbol.Params,
+			ParamTypes:    symbol.ParamTypes,
+			ParamDefaults: symbol.ParamDefaults,
+			ReturnType:    symbol.ReturnType,
+			ItemKind:      3,
 			Location: &Location{URI: symbol.URI, Range: Range{
 				Start: Position{Line: symbol.StartLine, Character: symbol.StartChar},
 				End:   Position{Line: symbol.StartLine, Character: symbol.StartChar + len(symbol.Name)},
@@ -632,6 +693,7 @@ func symbolFromVariant(fn cache.FunctionVariant) Symbol {
 		ArgsStr:       fn.ArgsStr,
 		Params:        fn.Params,
 		ParamTypes:    fn.ParamTypes,
+		ParamDefaults: fn.ParamDefaults,
 		ReturnType:    strings.TrimSpace(fn.ReturnType),
 		ItemKind:      fn.Kind,
 		Location:      loc,
@@ -742,7 +804,7 @@ func removeDocumentSymbols(existing map[string][]DocumentSymbol, files, keep map
 	}
 }
 
-func scanRoot(root string, label string, onFile func(uri string, symbols map[string]Symbol, docs []DocumentSymbol)) {
+func scanRoot(root string, label string, onFile func(uri string, symbols map[string]Symbol, docs []DocumentSymbol), onArchive func(string, map[string]string)) {
 	if root == "" {
 		return
 	}
@@ -753,6 +815,12 @@ func scanRoot(root string, label string, onFile func(uri string, symbols map[str
 		if d.IsDir() {
 			if relativeDepth(root, path) > maxScanDepth {
 				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.EqualFold(filepath.Ext(path), ".xetolib") {
+			if entries, err := readArchive(path); err == nil {
+				onArchive(path, entries)
 			}
 			return nil
 		}
@@ -772,9 +840,6 @@ func normalizeScanRoots(roots []ScanRoot) []ScanRoot {
 	for _, root := range roots {
 		path := normalizeRootPath(root.Path)
 		if path == "" {
-			continue
-		}
-		if _, err := os.Stat(path); err != nil {
 			continue
 		}
 		if _, exists := seen[path]; exists {
@@ -865,11 +930,7 @@ func rootLabel(root ScanRoot) string {
 	if root.Label != "" {
 		return root.Label
 	}
-	name := "externalPaths"
-	if root.Kind == ScanRootHaxall {
-		name = "haxallPaths"
-	}
-	return name + ":" + root.Path
+	return "externalPaths:" + root.Path
 }
 
 func workspaceRootLabel(root ScanRoot) string {
@@ -904,7 +965,7 @@ func isUnderRoot(path string, root string) bool {
 	if err != nil {
 		return false
 	}
-	return rel == "." || (!strings.HasPrefix(rel, "..") && rel != "")
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != "")
 }
 
 func isUnderAnyRoot(path string, roots []ScanRoot) bool {
@@ -947,6 +1008,18 @@ func pathFromURI(uri string) string {
 			return filepath.FromSlash(trimmed[1:])
 		}
 		return filepath.FromSlash(trimmed)
+	}
+	return uri
+}
+
+func normalizeSourceURI(uri string) string {
+	if strings.HasPrefix(uri, "file://") {
+		return fileURI(filepath.Clean(pathFromURI(uri)))
+	}
+	if parsed, err := url.Parse(uri); err == nil && parsed.Scheme == "axon-ext" && parsed.Host == "" && parsed.RawQuery == "" && parsed.Fragment == "" {
+		parsed.OmitHost = true
+		parsed.RawPath = ""
+		return parsed.String()
 	}
 	return uri
 }

@@ -2,6 +2,72 @@ package axon
 
 import "testing"
 
+func TestColonDeclarationsKeepMapSlotsSeparate(t *testing.T) {
+	source := "points: readAll(point)\ndata: {first: points.hisRead(2026-01-01), nested: {value: 2}}\nf: x => do\n  local: {value: x}\n  local\nend"
+	parsed := Parse(source)
+	if len(parsed.Errors) != 0 || len(parsed.Expressions) != 3 {
+		t.Fatalf("expected three declarations, got %#v", parsed)
+	}
+	for _, expression := range parsed.Expressions {
+		declaration, ok := expression.(*BinaryExpr)
+		if !ok || declaration.Operator != ":" || source[declaration.Source.StartOffset:declaration.Source.EndOffset] == "" {
+			t.Fatalf("expected source-positioned colon declaration, got %#v", expression)
+		}
+	}
+	data := parsed.Expressions[1].(*BinaryExpr).Right.(*MapExpr)
+	if len(data.Entries) != 2 || data.Entries[0].Key.(*NameExpr).Name != "first" {
+		t.Fatalf("map slots were consumed as declarations: %#v", data)
+	}
+	if _, ok := data.Entries[1].Value.(*MapExpr); !ok {
+		t.Fatalf("nested map was lost: %#v", data.Entries[1])
+	}
+}
+
+func TestTemporalLiteralTypesAndSpans(t *testing.T) {
+	for _, test := range []struct{ source, want string }{
+		{"2026-01-01", "Date"},
+		{"12:34", "Time"},
+		{"12:34:56.789", "Time"},
+		{"2026-01-01T12:34:56Z", "DateTime"},
+		{"2026-01-01T12:34:56.789-05:00 New_York", "DateTime"},
+		{"2026-01", "DateSpan"},
+		{"1.2e-3", "Number"},
+		{"5min", "Number"},
+		{"`fan://site/path`", "Uri"},
+		{"m", "Marker"},
+		{"na", "Marker"},
+		{"null", "None"},
+		{"false", "Bool"},
+	} {
+		parsed := ParseAt(test.source, Position{Line: 4, Character: 3})
+		if len(parsed.Errors) != 0 || len(parsed.Expressions) != 1 {
+			t.Fatalf("%q: unexpected AST: %#v", test.source, parsed)
+		}
+		literal, ok := parsed.Expressions[0].(*LiteralExpr)
+		if !ok {
+			t.Fatalf("%q: expected literal, got %T", test.source, parsed.Expressions[0])
+		}
+		got, known := LiteralType(literal)
+		if !known || got != test.want || literal.Value != test.source || literal.Source.End != (Position{Line: 4, Character: 3 + len(test.source)}) {
+			t.Errorf("%q: type=%q known=%t literal=%#v", test.source, got, known, literal)
+		}
+	}
+}
+
+func TestMemberInlineLambdaIsCallArgument(t *testing.T) {
+	parsed := Parse("grid.use x => inspect(x)")
+	if len(parsed.Errors) != 0 || len(parsed.Expressions) != 1 {
+		t.Fatalf("expected one inline-lambda call: %#v", parsed)
+	}
+	call, ok := parsed.Expressions[0].(*CallExpr)
+	if !ok || len(call.Arguments) != 1 {
+		t.Fatalf("expected a call with one lambda argument: %#v", parsed.Expressions[0])
+	}
+	if lambda, ok := call.Arguments[0].(*LambdaExpr); !ok || len(lambda.Parameters) != 1 || lambda.Parameters[0] != "x" {
+		t.Fatalf("expected lambda parameter x: %#v", call.Arguments[0])
+	}
+}
+
 func TestParseCallKeepsBareSpecNameAndReferenceDistinct(t *testing.T) {
 	result := Parse(`spec(FooBar, @specs.lib::FooBar)`)
 	if len(result.Errors) != 0 || len(result.Expressions) != 1 {

@@ -43,6 +43,7 @@ type serializedVariant struct {
 	ArgsStr       string            `json:"args_str"`
 	Params        []string          `json:"params"`
 	ParamTypes    map[string]string `json:"param_types,omitempty"`
+	ParamDefaults map[string]string `json:"param_defaults,omitempty"`
 	ReturnType    string            `json:"return_type,omitempty"`
 	Kind          int               `json:"kind"`
 	Location      *location         `json:"location,omitempty"`
@@ -233,7 +234,8 @@ func serializeTrio(fn trio.ParsedFunction, source sourceDescriptor) serializedVa
 func serializeXeto(fn xeto.ParsedFunction, source sourceDescriptor) serializedVariant {
 	return serializedVariant{
 		Name: fn.Name, Doc: fn.Doc, ArgsStr: fn.ArgsStr, Params: fn.Params, ParamTypes: fn.ParamTypes,
-		ReturnType: fn.ReturnType, Kind: 3,
+		ParamDefaults: fn.ParamDefaults,
+		ReturnType:    fn.ReturnType, Kind: 3,
 		Location:   serializeXetoLocation(fn.URI, fn.StartLine, fn.StartChar, fn.EndLine, fn.EndChar, source),
 		SourceKind: source.Kind, SourceModel: "specs", SourceVersion: source.Version, SourceID: source.ID, SourceRoot: source.ID,
 	}

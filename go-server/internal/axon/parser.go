@@ -242,6 +242,15 @@ func (p *expressionParser) parseSequence(stops map[string]bool) []Expr {
 		}
 		before := p.index
 		expression := p.parseExpression(0)
+		if name, ok := expression.(*NameExpr); ok && p.at(TokenOperator, ":") {
+			colon := p.consume()
+			value := p.parseExpression(0)
+			if value != nil {
+				expression = &BinaryExpr{Left: name, Operator: ":", Right: value, Source: mergeSpan(name.Span(), value.Span())}
+			} else {
+				p.addError("expected declaration value", colon, colon)
+			}
+		}
 		if expression != nil {
 			expressions = append(expressions, expression)
 		}
@@ -290,6 +299,14 @@ func (p *expressionParser) parseExpression(minPrecedence int) Expr {
 		}
 		if p.at(TokenOperator, "[") {
 			left = p.parseIndex(left)
+			continue
+		}
+		if _, member := left.(*MemberExpr); member && p.atKind(TokenIdentifier) && p.index+1 < len(p.tokens) && p.tokens[p.index+1].Text == "=>" {
+			open := spanOf(p.current())
+			argument := p.parseExpression(0)
+			if argument != nil {
+				left = &CallExpr{Callee: left, Arguments: []Expr{argument}, Open: open, Source: mergeSpan(left.Span(), argument.Span())}
+			}
 			continue
 		}
 

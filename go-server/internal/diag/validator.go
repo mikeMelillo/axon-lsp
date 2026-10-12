@@ -86,7 +86,9 @@ func validate(uri string, source string, manager *index.Manager, clearReferences
 				manager.AddReference(match.Word, resolver.Location(uri, i, match.Start, match.End))
 				_ = symbol
 			}
-			if match.End < len(line) && line[match.End] == '(' && !found && !isLocal && !isParam && !isScoped {
+			// Dot callees are checked by the AST, including bare calls and UTF-16 ranges.
+			isDotCallee := strings.HasSuffix(strings.TrimRight(line[:match.Start], " \t"), ".")
+			if match.End < len(line) && line[match.End] == '(' && !isDotCallee && !found && !isLocal && !isParam && !isScoped {
 				diagnostics = append(diagnostics, index.Diagnostic{
 					Range: index.Range{
 						Start: index.Position{Line: i, Character: match.Start},
@@ -109,10 +111,14 @@ func validateCallsFromAST(uri, source string, expression axon.Expr, manager *ind
 	result := []index.Diagnostic{}
 	visitExpr(expression, func(node axon.Expr) {
 		call, isCall := node.(*axon.CallExpr)
+		member, isMember := node.(*axon.MemberExpr)
 		if !isCall {
-			return
+			if !isMember {
+				return
+			}
+			call = &axon.CallExpr{Callee: member, Source: member.Source}
 		}
-		name, nameSpan, pipeArgs, ok := callTarget(call.Callee)
+		name, nameSpan, _, ok := callTarget(call.Callee)
 		if !ok {
 			return
 		}
@@ -121,15 +127,34 @@ func validateCallsFromAST(uri, source string, expression axon.Expr, manager *ind
 			return
 		}
 		fn, found := manager.FindFunctionForURI(name, uri)
+		args := call.Arguments
+		_, dotCall := call.Callee.(*axon.MemberExpr)
+		if receiver, ok := call.Callee.(*axon.MemberExpr); ok {
+			args = append([]axon.Expr{receiver.Receiver}, args...)
+			receiverExpr := receiver.Receiver
+			for group, ok := receiverExpr.(*axon.GroupExpr); ok; group, ok = receiverExpr.(*axon.GroupExpr) {
+				receiverExpr = group.Expression
+			}
+			if nameExpr, ok := receiverExpr.(*axon.NameExpr); ok && !(found && isFilterArgument(fn, 0)) {
+				result = append(result, undefinedArgumentIdentifier(uri, nameExpr, manager, localFuncs, lineScopes, ignoredLines)...)
+			}
+		}
 		if !found {
+			if dotCall {
+				_, scoped := scopedNameAt(lineScopes, calleeLine, name)
+				_, local := localFuncs[name]
+				if !scoped && !local {
+					result = append(result, index.Diagnostic{Range: index.Range{Start: toIndexPosition(nameSpan.Start), End: toIndexPosition(nameSpan.End)}, Message: "Undefined function: " + name, Severity: 1})
+				}
+			}
 			return
 		}
-		args := call.Arguments
-		argumentCount := len(args) + pipeArgs
+		argumentCount := len(args)
 		if warnMissingArguments && len(fn.ParamTypes) > 0 && argumentCount < len(fn.Params) {
 			missing := []string{}
 			for _, param := range fn.Params[argumentCount:] {
-				if _, optional := optionalType(fn.ParamTypes[param]); !optional {
+				_, hasDefault := fn.ParamDefaults[param]
+				if _, optional := optionalType(fn.ParamTypes[param]); !optional && !hasDefault {
 					missing = append(missing, param)
 				}
 			}
@@ -138,42 +163,37 @@ func validateCallsFromAST(uri, source string, expression axon.Expr, manager *ind
 			}
 		}
 		for n, arg := range args {
-			paramIndex := n + pipeArgs
+			paramIndex := n
 			if paramIndex >= len(fn.Params) {
 				break
 			}
 			if _, isLambda := arg.(*axon.LambdaExpr); isLambda {
 				continue
 			}
-			actual, hasActualType := argumentExprType(source, arg)
+			actual, hasActualType := argumentExprType(uri, source, arg, manager)
 			if !hasActualType {
 				if isFilterArgument(fn, paramIndex) {
 					// Filter expressions use bare tag names as syntax, rather than
 					// necessarily referring to an Axon variable.
 					continue
 				}
+				for group, ok := arg.(*axon.GroupExpr); ok; group, ok = arg.(*axon.GroupExpr) {
+					arg = group.Expression
+				}
 				nameExpr, isName := arg.(*axon.NameExpr)
-				if isName && !isKnownArgumentIdentifier(nameExpr.Name, fn, paramIndex) {
-					_, locallyDefined := scopedNameAt(lineScopes, nameExpr.Span().Start.Line, nameExpr.Name)
-					if locallyDefined {
-						continue
-					}
-					if isCapitalizedIdentifier(nameExpr.Name) && manager.HasSpecName(nameExpr.Name) {
-						continue
-					}
-					if _, defined := localFuncs[nameExpr.Name]; defined {
-						continue
-					}
-					if _, defined := manager.FindFunctionForURI(nameExpr.Name, uri); defined {
-						continue
-					}
-					result = append(result, index.Diagnostic{Range: index.Range{Start: toIndexPosition(nameExpr.Span().Start), End: toIndexPosition(nameExpr.Span().End)}, Message: "Undefined variable: " + nameExpr.Name, Severity: 2})
+				if isName && !(dotCall && paramIndex == 0) {
+					result = append(result, undefinedArgumentIdentifier(uri, nameExpr, manager, localFuncs, lineScopes, ignoredLines)...)
 				}
 				continue
 			}
 			expected := fn.ParamTypes[fn.Params[paramIndex]]
 			expected, optional := optionalType(expected)
-			if expected == "" || expected == "Obj" || (actual == "None" && optional) || primitiveCompatible(actual, expected) {
+			actualType, actualOptional := optionalType(actual)
+			// A nullable return is not a definite null or incompatible value.
+			if actualOptional && !optional {
+				continue
+			}
+			if expected == "" || expected == "Obj" || (actual == "None" && optional) || primitiveCompatible(actualType, expected) {
 				continue
 			}
 			span := arg.Span()
@@ -206,16 +226,34 @@ func toIndexPosition(position axon.Position) index.Position {
 	return index.Position{Line: position.Line, Character: position.Character}
 }
 
-func argumentExprType(source string, expression axon.Expr) (string, bool) {
+func argumentExprType(uri, source string, expression axon.Expr, manager *index.Manager) (string, bool) {
 	switch value := expression.(type) {
 	case *axon.GroupExpr:
-		return argumentExprType(source, value.Expression)
+		return argumentExprType(uri, source, value.Expression, manager)
 	case *axon.ListExpr:
 		return "List", true
 	case *axon.MapExpr:
 		return "Dict", true
 	case *axon.LiteralExpr:
-		return primitiveArgumentType(value.Value)
+		return axon.LiteralType(value)
+	case *axon.UnaryExpr:
+		if value.Operator == "+" || value.Operator == "-" {
+			if actual, known := argumentExprType(uri, source, value.Operand, manager); known && actual == "Number" {
+				return "Number", true
+			}
+		}
+		return "", false
+	case *axon.MemberExpr, *axon.CallExpr:
+		callee := expression
+		if call, ok := expression.(*axon.CallExpr); ok {
+			callee = call.Callee
+		}
+		if name, _, _, ok := callTarget(callee); ok {
+			if fn, found := manager.FindFunctionForURI(name, uri); found && fn.ReturnType != "" {
+				return fn.ReturnType, true
+			}
+		}
+		return "", false
 	default:
 		span := expression.Span()
 		if span.StartOffset < 0 || span.EndOffset > len(source) || span.EndOffset < span.StartOffset {
@@ -241,7 +279,12 @@ func visitExpr(expression axon.Expr, visit func(axon.Expr)) {
 	case *axon.MemberExpr:
 		visitExpr(value.Receiver, visit)
 	case *axon.CallExpr:
-		visitExpr(value.Callee, visit)
+		if member, ok := value.Callee.(*axon.MemberExpr); ok {
+			// The explicit call validates this member; only visit its receiver.
+			visitExpr(member.Receiver, visit)
+		} else {
+			visitExpr(value.Callee, visit)
+		}
 		for _, argument := range value.Arguments {
 			visitExpr(argument, visit)
 		}
@@ -294,16 +337,24 @@ func optionalType(typeName string) (string, bool) {
 	return strings.TrimSpace(typeName), false
 }
 
-func isKnownArgumentIdentifier(value string, fn index.Symbol, position int) bool {
-	if value == "true" || value == "false" || value == "null" {
-		return true
+func undefinedArgumentIdentifier(uri string, name *axon.NameExpr, manager *index.Manager, localFuncs map[string]struct{}, lineScopes []map[string]struct{}, ignoredLines []bool) []index.Diagnostic {
+	line := name.Span().Start.Line
+	if line >= 0 && line < len(ignoredLines) && ignoredLines[line] {
+		return nil
 	}
-	for name := range fn.ParamTypes {
-		if name == value {
-			return true
-		}
+	if _, defined := scopedNameAt(lineScopes, line, name.Name); defined {
+		return nil
 	}
-	return position < len(fn.Params) && fn.Params[position] == value
+	if isCapitalizedIdentifier(name.Name) && manager.HasSpecName(name.Name) {
+		return nil
+	}
+	if _, defined := localFuncs[name.Name]; defined {
+		return nil
+	}
+	if _, defined := manager.FindFunctionForURI(name.Name, uri); defined {
+		return nil
+	}
+	return []index.Diagnostic{{Range: index.Range{Start: toIndexPosition(name.Span().Start), End: toIndexPosition(name.Span().End)}, Message: "Undefined variable: " + name.Name, Severity: 2}}
 }
 
 func isCapitalizedIdentifier(value string) bool {

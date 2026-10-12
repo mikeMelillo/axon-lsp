@@ -37,6 +37,7 @@ type Symbol struct {
 	ArgsStr       string
 	Params        []string
 	ParamTypes    map[string]string
+	ParamDefaults map[string]string
 	ReturnType    string
 	ItemKind      int
 	Location      *Location
@@ -60,7 +61,6 @@ type ScanRootKind string
 
 const (
 	ScanRootWorkspace ScanRootKind = "workspace"
-	ScanRootHaxall    ScanRootKind = "haxall"
 	ScanRootExternal  ScanRootKind = "external"
 )
 

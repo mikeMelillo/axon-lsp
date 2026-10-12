@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { workspace, ExtensionContext, ExtensionMode, window, commands, env, Uri, TextDocument } from 'vscode';
+import { workspace, ExtensionContext, ExtensionMode, window, commands, env, Uri, TextDocument, EventEmitter, RelativePattern, FileSystemWatcher } from 'vscode';
 import {
     LanguageClient,
     LanguageClientOptions,
@@ -71,6 +71,9 @@ function startLanguageClient(context: ExtensionContext): void {
     };
 
     // 4. Client options: which files to watch and where to log
+    const sourcePattern = '**/*.{trio,axon,fan,xeto,xetolib}';
+    const workspaceWatcher = workspace.createFileSystemWatcher(sourcePattern);
+    context.subscriptions.push(workspaceWatcher);
     const clientOptions: LanguageClientOptions = {
         // Must match the language ID in package.json
         documentSelector: [
@@ -85,7 +88,7 @@ function startLanguageClient(context: ExtensionContext): void {
         },
         synchronize: {
             // Notify the server about file changes in the workspace
-            fileEvents: workspace.createFileSystemWatcher('**/{*.trio,*.fan,*.xeto}')
+            fileEvents: workspaceWatcher
         },
         outputChannel: outputChannel,
         traceOutputChannel: window.createOutputChannel('Axon LSP Trace'),
@@ -102,11 +105,28 @@ function startLanguageClient(context: ExtensionContext): void {
     );
     client = languageClient;
     outputChannel.appendLine('Starting Language Client...');
+    const sourceChanges = new EventEmitter<Uri>();
+    context.subscriptions.push(sourceChanges);
+    languageClient.onNotification('axonLsp/archiveSourcesChanged', () => {
+        for (const document of workspace.textDocuments) {
+            if (document.uri.scheme === 'axon-ext' && document.uri.path.startsWith('/xetolib/')) {
+                sourceChanges.fire(document.uri);
+            }
+        }
+    });
     const clientReady = languageClient.start();
     context.subscriptions.push(workspace.registerTextDocumentContentProvider('axon-ext', {
+        onDidChange: sourceChanges.event,
         provideTextDocumentContent: async uri => {
             await clientReady;
-            return languageClient.sendRequest<string>('axonLsp/embeddedDocument', { uri: uri.toString() });
+            try {
+                return await languageClient.sendRequest<string>('axonLsp/embeddedDocument', { uri: uri.toString() });
+            } catch (err) {
+                if (uri.path.startsWith('/xetolib/') && err instanceof Error && 'code' in err && err.code === -32602) {
+                    return '// Archive source is no longer available. It may have been removed or replaced.';
+                }
+                throw err;
+            }
         }
     }));
 
@@ -114,12 +134,168 @@ function startLanguageClient(context: ExtensionContext): void {
         outputChannel.appendLine(`Failed to start client: ${err}`);
     });
 
+    let externalWatchers: { dispose(): void }[] = [];
+    let reconcileTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let reconcileStarted = 0;
+    let reconcilePaths = new Map<string, boolean>();
+    let reconcileActive = false;
+    let watcherGeneration = 0;
+    let watchersDisposed = false;
+    function flushReconcile(): void {
+        reconcileTimer = undefined;
+        if (watchersDisposed || reconcileActive || !reconcilePaths.size) {
+            return;
+        }
+        const batch = reconcilePaths;
+        reconcilePaths = new Map();
+        reconcileStarted = 0;
+        reconcileActive = true;
+        const generation = watcherGeneration;
+        const retries = [...batch].filter(([, retry]) => retry).map(([uri]) => uri);
+        const send = async (attempt: number): Promise<void> => {
+            try {
+                await clientReady;
+                if (watchersDisposed || generation !== watcherGeneration) {
+                    return;
+                }
+                await languageClient.sendNotification('axonLsp/reconcileSources', {
+                    uris: attempt === 0 ? [...batch.keys()] : retries
+                });
+            } catch (err) {
+                outputChannel.appendLine(`Failed to reconcile sources: ${err}`);
+            }
+            if (watchersDisposed || generation !== watcherGeneration) {
+                return;
+            }
+            // A detached batch has at most two retries; fresh events cannot reset it.
+            if (retries.length && attempt < 2) {
+                retryTimer = setTimeout(() => {
+                    retryTimer = undefined;
+                    void send(attempt + 1);
+                }, attempt === 0 ? 750 : 1500);
+            } else {
+                reconcileActive = false;
+                if (!reconcileTimer) {
+                    flushReconcile();
+                }
+            }
+        };
+        void send(0);
+    }
+    function scheduleReconcile(uri: Uri, retry: boolean): void {
+        const key = uri.toString();
+        reconcilePaths.set(key, retry || reconcilePaths.get(key) === true);
+        if (!reconcileStarted) {
+            reconcileStarted = Date.now();
+        }
+        if (reconcileTimer) {
+            clearTimeout(reconcileTimer);
+        }
+        reconcileTimer = setTimeout(flushReconcile, Math.max(0, Math.min(250, 1000 - (Date.now() - reconcileStarted))));
+    }
+    function updateExternalWatchers(): void {
+        externalWatchers.forEach(watcher => watcher.dispose());
+        externalWatchers = [];
+        watcherGeneration++;
+        reconcileActive = false;
+        if (reconcileTimer) {
+            clearTimeout(reconcileTimer);
+            reconcileTimer = undefined;
+        }
+        if (retryTimer) {
+            clearTimeout(retryTimer);
+            retryTimer = undefined;
+        }
+        reconcilePaths.clear();
+        reconcileStarted = 0;
+        const folders = workspace.workspaceFolders ?? [];
+        const selected = settings.indexAllWorkspaceFolders ? folders : folders.slice(0, 1);
+        const roots = [...new Set([...selected.map(folder => folder.uri.fsPath), ...settings.externalPaths].map(root => path.resolve(root)))];
+        for (const root of roots) {
+            // Anchor one level above the nearest existing parent to observe its
+            // deletion too. Higher ancestor deletion is outside this boundary.
+            let base = path.dirname(root);
+            while (!fs.existsSync(base) && path.dirname(base) !== base) {
+                base = path.dirname(base);
+            }
+            base = path.dirname(base);
+            const segments = path.relative(base, root).split(path.sep).filter(Boolean)
+                .map(segment => segment.replace(/[\[\]*?{}]/g, character => `[${character}]`));
+            const prefixes = segments.map((_, i) => segments.slice(0, i + 1).join('/'));
+            const rootPattern = prefixes[prefixes.length - 1] ?? '';
+            const children = Array.from({ length: 5 }, (_, i) =>
+                [rootPattern, ...Array<string>(i + 1).fill('*')].filter(Boolean).join('/'));
+            const pattern = `{${[...prefixes, ...children].join(',')}}`;
+            const watcher: FileSystemWatcher = workspace.createFileSystemWatcher(new RelativePattern(Uri.file(base), pattern));
+            externalWatchers.push(watcher);
+            const relevant = (uri: Uri) => {
+                const relative = path.relative(root, uri.fsPath);
+                const ancestor = path.relative(uri.fsPath, root);
+                const inside = relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+                const parent = ancestor === '' || (!ancestor.startsWith(`..${path.sep}`) && ancestor !== '..' && !path.isAbsolute(ancestor));
+                return parent || (inside && relative.split(path.sep).length <= 5);
+            };
+            const notify = (uri: Uri, type: number) => {
+                if (!relevant(uri)) {
+                    return;
+                }
+                const source = /\.(trio|axon|fan|xeto|xetolib)$/i.test(uri.fsPath);
+                let directory = false;
+                if (type === 1) {
+                    try {
+                        directory = fs.statSync(uri.fsPath).isDirectory();
+                    } catch {
+                        // A create/delete race is handled by the deletion event.
+                    }
+                }
+                const archive = /\.xetolib$/i.test(uri.fsPath);
+                if (directory || archive) {
+                    scheduleReconcile(uri, true);
+                } else if (type === 3) {
+                    // Eligibility is checked cheaply on the server, including
+                    // directories named like sources. Unknown files get no retries.
+                    scheduleReconcile(uri, false);
+                }
+                // Workspace sources are already synchronized by workspaceWatcher.
+                if (directory || !source || folders.some(folder => {
+                    const relative = path.relative(folder.uri.fsPath, uri.fsPath);
+                    return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+                })) {
+                    return;
+                }
+                const generation = watcherGeneration;
+                void clientReady.then(() => {
+                    if (!watchersDisposed && generation === watcherGeneration) {
+                        return languageClient.sendNotification('workspace/didChangeWatchedFiles', {
+                            changes: [{ uri: uri.toString(), type }]
+                        });
+                    }
+                }).catch(err => outputChannel.appendLine(`Failed to notify external source change: ${err}`));
+            };
+            externalWatchers.push(watcher.onDidCreate(uri => notify(uri, 1)), watcher.onDidChange(uri => notify(uri, 2)), watcher.onDidDelete(uri => notify(uri, 3)));
+        }
+    }
+    updateExternalWatchers();
+    context.subscriptions.push({ dispose: () => {
+        watchersDisposed = true;
+        if (reconcileTimer) {
+            clearTimeout(reconcileTimer);
+        }
+        if (retryTimer) {
+            clearTimeout(retryTimer);
+        }
+        reconcilePaths.clear();
+        externalWatchers.forEach(watcher => watcher.dispose());
+    } });
+
     context.subscriptions.push(workspace.onDidChangeConfiguration(event => {
         if (!event.affectsConfiguration('axonLsp')) {
             return;
         }
         const previousSettings = settings;
         settings = getServerSettings();
+        updateExternalWatchers();
         if (!previousSettings.indexAllWorkspaceFolders && settings.indexAllWorkspaceFolders) {
             logWorkspaceIndexWarning(outputChannel, true);
         }
@@ -128,6 +304,9 @@ function startLanguageClient(context: ExtensionContext): void {
         });
     }));
     context.subscriptions.push(workspace.onDidChangeWorkspaceFolders(() => {
+        settings = getServerSettings();
+        updateExternalWatchers();
+        void languageClient.sendNotification('workspace/didChangeConfiguration', { settings });
         logWorkspaceIndexWarning(outputChannel, settings.indexAllWorkspaceFolders);
     }));
 
@@ -141,10 +320,10 @@ function startLanguageClient(context: ExtensionContext): void {
 }
 
 interface ServerSettings {
-    haxallPaths: string[];
     externalPaths: string[];
     indexAllWorkspaceFolders: boolean;
     mode: string;
+    ignoreBundledXetoCache: boolean;
     warnMissingArguments: boolean;
 }
 
@@ -152,10 +331,10 @@ function getServerSettings(): ServerSettings {
     const config = workspace.getConfiguration('axonLsp');
     const workspaceRoot = workspace.workspaceFolders?.[0]?.uri.fsPath;
     return {
-        haxallPaths: normalizeConfiguredPaths(config.get<string[]>('haxallPaths', []), workspaceRoot),
         externalPaths: normalizeConfiguredPaths(config.get<string[]>('externalPaths', []), workspaceRoot),
         indexAllWorkspaceFolders: config.get<boolean>('indexAllWorkspaceFolders', false),
         mode: config.get<string>('mode', 'auto'),
+        ignoreBundledXetoCache: config.get<boolean>('ignoreBundledXetoCache', false),
         warnMissingArguments: config.get<boolean>('warnMissingArguments', true)
     };
 }

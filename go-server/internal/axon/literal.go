@@ -1,5 +1,46 @@
 package axon
 
+import "strings"
+
+// LiteralType classifies a literal without treating dates and times as numbers.
+// TokenNumber includes temporal literals as well as numeric values with units.
+func LiteralType(literal *LiteralExpr) (string, bool) {
+	switch literal.Kind {
+	case TokenNumber:
+		value := literal.Value
+		if end := scanDateOrTime(value, 0); end == len(value) && end > 0 {
+			if strings.Contains(value, "T") {
+				return "DateTime", true
+			}
+			if strings.Contains(value, ":") {
+				return "Time", true
+			}
+			if len(value) == 10 {
+				return "Date", true
+			}
+			return "DateSpan", true
+		}
+		return "Number", true
+	case TokenReference:
+		return "Ref", true
+	case TokenString:
+		if strings.HasPrefix(literal.Value, "`") {
+			return "Uri", true
+		}
+		return "Str", true
+	case TokenKeyword:
+		switch literal.Value {
+		case "true", "false":
+			return "Bool", true
+		case "null":
+			return "None", true
+		case "na", "m":
+			return "Marker", true
+		}
+	}
+	return "", false
+}
+
 func IsRefLiteral(value string) bool {
 	if len(value) < 2 || value[0] != '@' {
 		return false

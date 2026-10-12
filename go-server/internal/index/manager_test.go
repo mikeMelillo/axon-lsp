@@ -169,14 +169,40 @@ static Dict extraFunc(Dict arg1) {
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	mgr.SetExtraRoots([]ScanRoot{{Path: root, Kind: ScanRootHaxall}})
+	mgr.SetExtraRoots([]ScanRoot{{Path: root, Kind: ScanRootExternal}})
 	loc := mgr.GetDefinition("extraFunc")
 	if loc == nil || loc.URI == "" {
 		t.Fatal("expected definition for extra root symbol")
 	}
 	hover := mgr.BuildHover("extraFunc")
-	if hover == nil || !strings.Contains(hover.Contents.Value, "haxallPaths:") {
-		t.Fatalf("expected hover to include haxall root source, got %q", hover.Contents.Value)
+	if hover == nil || !strings.Contains(hover.Contents.Value, "externalPaths:"+root) {
+		t.Fatalf("expected hover to include external root source, got %#v", hover)
+	}
+}
+
+func TestExtraRootsPreferFirstConfiguredPath(t *testing.T) {
+	t.Parallel()
+	mgr, err := NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstRoot := t.TempDir()
+	secondRoot := t.TempDir()
+	firstPath := filepath.Join(firstRoot, "shared.trio")
+	secondPath := filepath.Join(secondRoot, "shared.trio")
+	writeTrioFunction(t, firstPath, "sharedExternalFunc")
+	writeTrioFunction(t, secondPath, "sharedExternalFunc")
+
+	for _, order := range [][]string{{firstRoot, secondRoot}, {secondRoot, firstRoot}} {
+		mgr.SetExtraRoots([]ScanRoot{
+			{Path: order[0], Kind: ScanRootExternal},
+			{Path: order[1], Kind: ScanRootExternal},
+		})
+		loc := mgr.GetDefinition("sharedExternalFunc")
+		expected := fileURI(filepath.Join(order[0], "shared.trio"))
+		if loc == nil || loc.URI != expected {
+			t.Fatalf("expected first external root definition %q, got %#v", expected, loc)
+		}
 	}
 }
 

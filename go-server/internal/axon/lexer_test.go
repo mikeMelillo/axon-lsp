@@ -85,3 +85,13 @@ func TestLexKeepsDateTimeAndDurationLiteralsWhole(t *testing.T) {
 		}
 	}
 }
+
+func TestLexDateTimeRetainsZoneAndMemberBoundary(t *testing.T) {
+	for _, literal := range []string{"2026-01-01T12:34:56Z", "2026-01-01T12:34:56.789-05:00 New_York"} {
+		source := literal + ".date()"
+		tokens := Lex(source)
+		if len(tokens) != 6 || tokens[0].Kind != TokenNumber || tokens[0].Text != literal || tokens[0].End != len(literal) || tokens[1].Text != "." || tokens[2].Text != "date" {
+			t.Errorf("DateTime/member boundary was lost for %q: %#v", source, tokens)
+		}
+	}
+}

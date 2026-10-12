@@ -1,10 +1,35 @@
 package cache
 
 import (
+	"encoding/json"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestDefaultSourcesSurviveCacheRoundTrip(t *testing.T) {
+	t.Parallel()
+	want := map[string]string{"nil": "null", "flag": "false", "zero": "0", "dict": `{a: "comma, colon: quote\" slash\\", b: 0}`}
+	data, err := json.Marshal(serializedCache{Functions: map[string][]serializedVariant{
+		"defaults": {{Name: "defaults", ArgsStr: "(nil: Dict? = null)", Params: []string{"nil", "flag", "zero", "dict", "nullable"}, ParamTypes: map[string]string{"nil": "Dict?", "nullable": "Dict?"}, ParamDefaults: want, ReturnType: "Dict?"}},
+		"legacy":   {{Name: "legacy", ParamTypes: map[string]string{"nullable": "Dict?"}}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	functions, err := loadFunctions(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := functions["defaults"][0]
+	if !reflect.DeepEqual(got.ParamDefaults, want) || got.ParamTypes["nil"] != "Dict?" || got.ReturnType != "Dict?" || got.ArgsStr != "(nil: Dict? = null)" {
+		t.Fatalf("cache signature/default transfer failed: %#v", got)
+	}
+	if functions["legacy"][0].ParamDefaults != nil {
+		t.Fatal("cache loading must not infer nullable defaults")
+	}
+}
 
 func TestEmbeddedFunctionsPreserveRanges(t *testing.T) {
 	t.Parallel()

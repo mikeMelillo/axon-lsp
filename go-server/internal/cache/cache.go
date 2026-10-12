@@ -29,6 +29,7 @@ type serializedVariant struct {
 	ArgsStr       string              `json:"args_str"`
 	Params        []string            `json:"params"`
 	ParamTypes    map[string]string   `json:"param_types,omitempty"`
+	ParamDefaults map[string]string   `json:"param_defaults,omitempty"`
 	ReturnType    string              `json:"return_type,omitempty"`
 	Kind          int                 `json:"kind"`
 	Location      *serializedLocation `json:"location,omitempty"`
@@ -62,6 +63,7 @@ type FunctionVariant struct {
 	ArgsStr       string
 	Params        []string
 	ParamTypes    map[string]string
+	ParamDefaults map[string]string
 	ReturnType    string
 	Kind          int
 	LocationURI   string
@@ -74,8 +76,12 @@ type FunctionVariant struct {
 }
 
 func LoadEmbeddedFunctions() (map[string][]FunctionVariant, error) {
+	return loadFunctions(EmbeddedFunctionCache)
+}
+
+func loadFunctions(data []byte) (map[string][]FunctionVariant, error) {
 	var raw serializedCache
-	if err := json.Unmarshal(EmbeddedFunctionCache, &raw); err != nil {
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("unmarshal embedded function cache: %w", err)
 	}
 	functions := make(map[string][]FunctionVariant, len(raw.Functions))
@@ -91,6 +97,7 @@ func LoadEmbeddedFunctions() (map[string][]FunctionVariant, error) {
 				ArgsStr:       defaultArgs(fn.ArgsStr),
 				Params:        fn.Params,
 				ParamTypes:    fn.ParamTypes,
+				ParamDefaults: fn.ParamDefaults,
 				ReturnType:    strings.TrimSpace(fn.ReturnType),
 				Kind:          fn.Kind,
 				LocationURI:   deserializeLocationURI(fn.Location),

@@ -15,6 +15,23 @@ import (
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/xeto"
 )
 
+func TestScanRootsFromSettingsPreservesExternalPathOrder(t *testing.T) {
+	t.Parallel()
+	paths := []string{"/sources/haxall", "/sources/custom"}
+	roots := scanRootsFromSettings(settingsPayload{ExternalPaths: paths})
+	if len(roots) != len(paths) {
+		t.Fatalf("expected %d external roots, got %#v", len(paths), roots)
+	}
+	for i, root := range roots {
+		if root.Path != paths[i] || root.Kind != index.ScanRootExternal {
+			t.Fatalf("unexpected external root at position %d: %#v", i, root)
+		}
+	}
+	if roots := scanRootsFromSettings(settingsPayload{}); len(roots) != 0 {
+		t.Fatalf("expected no external roots for default settings, got %#v", roots)
+	}
+}
+
 func TestHandleCodeActionAddsLspIgnoreQuickFix(t *testing.T) {
 	t.Parallel()
 	server := NewServer(bytes.NewReader(nil), &bytes.Buffer{})

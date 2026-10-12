@@ -1,6 +1,6 @@
 # Axon LSP Roadmap
 
-## Version 0.2.x - Current Direction
+## Version 0.4.x - Current Direction
 
 ### Completed
 
@@ -14,10 +14,14 @@
 - Basic syntax highlighting
 - Function signature help
 - Reference finder
+- Document symbols, multi-root indexing, and configurable external sources
+- Xetolib archive indexing and read-only source navigation
+- Current-file and editable-source precedence over archived metadata
+- Optional bundled Xeto metadata, with legacy defs retained
+- Dot-call receiver validation and explicit Xeto parameter-default metadata
 
 ### Phase B - Legacy Support Polish
 
-- Add `Ctrl+Shift+O` / document symbols
 - Expand cached core and SkySpark function coverage
 - Improve hover and definition ergonomics
 - Improve workspace indexing and multi-directory support
@@ -43,7 +47,7 @@
 ### Future (Haxall 4.x)
 
 - Architecture changes are expected to be substantial
-- Specs/Xeto will need their own indexing and symbol model
+- Expand the existing Xeto name/function index into richer spec and library dependency modeling
 - Type-aware editor features will likely move beyond function-only metadata
 
 ## Recent Notes

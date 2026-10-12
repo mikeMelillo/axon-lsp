@@ -93,6 +93,7 @@ func (s *Server) handle(msg requestMessage) error {
 			s.settings = params.InitializationOptions.Settings
 		}
 		s.manager.SetMode(parseModeSetting(s.settings.Mode))
+		s.manager.SetIgnoreBundledXetoCache(s.settings.IgnoreBundledXetoCache)
 		return s.writeResponse(msg.ID, initializeResult{
 			Capabilities: serverCapabilities{
 				TextDocumentSync:          textDocumentSyncOptions{OpenClose: true, Change: 1, Save: saveOptions{IncludeText: false}},
@@ -116,6 +117,7 @@ func (s *Server) handle(msg requestMessage) error {
 	case "initialized":
 		if s.manager != nil {
 			s.refreshWorkspaceIndexes()
+			return s.writeNotification("axonLsp/archiveSourcesChanged", struct{}{})
 		}
 		return nil
 	case "workspace/didChangeConfiguration":
@@ -127,11 +129,15 @@ func (s *Server) handle(msg requestMessage) error {
 		s.settings = params.Settings
 		if s.manager != nil {
 			s.manager.SetMode(parseModeSetting(params.Settings.Mode))
+			s.manager.SetIgnoreBundledXetoCache(params.Settings.IgnoreBundledXetoCache)
 			if indexAllChanged {
 				s.refreshWorkspaceIndexes()
 			} else {
 				s.manager.SetExtraRoots(scanRootsFromSettings(params.Settings))
 				s.reapplyOpenDocuments()
+			}
+			if err := s.writeNotification("axonLsp/archiveSourcesChanged", struct{}{}); err != nil {
+				return err
 			}
 			if err := s.publishOpenDiagnostics(); err != nil {
 				return err
@@ -146,6 +152,10 @@ func (s *Server) handle(msg requestMessage) error {
 		s.updateWorkspaceFolders(params.Event)
 		if s.manager != nil {
 			s.refreshWorkspaceIndexes()
+			if err := s.writeNotification("axonLsp/archiveSourcesChanged", struct{}{}); err != nil {
+				return err
+			}
+			return s.publishOpenDiagnostics()
 		}
 		return nil
 	case "workspace/didChangeWatchedFiles":
@@ -153,8 +163,21 @@ func (s *Server) handle(msg requestMessage) error {
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
 			return err
 		}
-		s.updateWatchedFiles(params.Changes)
-		return nil
+		return s.updateWatchedFiles(params.Changes)
+	case "axonLsp/reconcileSources":
+		var params struct {
+			URIs []string `json:"uris"`
+		}
+		if err := json.Unmarshal(msg.Params, &params); err != nil {
+			return err
+		}
+		paths := make([]string, 0, len(params.URIs))
+		for _, uri := range params.URIs {
+			if strings.HasPrefix(uri, "file://") {
+				paths = append(paths, pathFromURI(uri))
+			}
+		}
+		return s.reconcileSources(paths)
 	case "axonLsp/embeddedDocument":
 		var params embeddedDocumentParams
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
@@ -165,6 +188,11 @@ func (s *Server) handle(msg requestMessage) error {
 		}
 		if content, ok := cache.XetoSource(params.URI); ok {
 			return s.writeResponse(msg.ID, content, nil)
+		}
+		if s.manager != nil {
+			if content, ok := s.manager.ArchiveContent(params.URI); ok {
+				return s.writeResponse(msg.ID, content, nil)
+			}
 		}
 		return s.writeResponse(msg.ID, nil, &responseError{Code: -32602, Message: "unknown embedded document"})
 	case "shutdown":
@@ -181,7 +209,10 @@ func (s *Server) handle(msg requestMessage) error {
 		if s.manager != nil {
 			s.manager.UpdateDocument(params.TextDocument.URI, params.TextDocument.Text)
 		}
-		return s.publishDiagnostics(params.TextDocument.URI)
+		if strings.HasPrefix(params.TextDocument.URI, "axon-ext:/xetolib/") {
+			return nil
+		}
+		return s.publishOpenDiagnostics()
 	case "textDocument/didChange":
 		var params didChangeParams
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
@@ -193,7 +224,10 @@ func (s *Server) handle(msg requestMessage) error {
 				s.manager.UpdateDocument(params.TextDocument.URI, params.ContentChanges[len(params.ContentChanges)-1].Text)
 			}
 		}
-		return s.publishDiagnostics(params.TextDocument.URI)
+		if strings.HasPrefix(params.TextDocument.URI, "axon-ext:/xetolib/") {
+			return nil
+		}
+		return s.publishOpenDiagnostics()
 	case "textDocument/didClose":
 		var params didSaveParams
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
@@ -210,7 +244,10 @@ func (s *Server) handle(msg requestMessage) error {
 				s.manager.RemoveDocument(params.TextDocument.URI)
 			}
 		}
-		return nil
+		if strings.HasPrefix(params.TextDocument.URI, "axon-ext:/xetolib/") {
+			return nil
+		}
+		return s.publishOpenDiagnostics()
 	case "textDocument/didSave":
 		var params didSaveParams
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
@@ -223,7 +260,15 @@ func (s *Server) handle(msg requestMessage) error {
 				s.manager.UpdateDocument(params.TextDocument.URI, string(content))
 			}
 		}
-		return s.publishDiagnostics(params.TextDocument.URI)
+		if strings.HasPrefix(params.TextDocument.URI, "axon-ext:/xetolib/") {
+			return nil
+		}
+		if _, open := s.document(params.TextDocument.URI); !open {
+			if err := s.publishDiagnostics(params.TextDocument.URI); err != nil {
+				return err
+			}
+		}
+		return s.publishOpenDiagnostics()
 	case "textDocument/completion":
 		if s.manager == nil {
 			return s.writeResponse(msg.ID, index.CompletionList{IsIncomplete: false, Items: []index.CompletionItem{}}, nil)
@@ -241,7 +286,7 @@ func (s *Server) handle(msg requestMessage) error {
 				return s.writeResponse(msg.ID, index.CompletionList{IsIncomplete: false, Items: []index.CompletionItem{}}, nil)
 			} else {
 				serverLog.Printf("completion xeto hit uri=%s pos=%d:%d fn=%s region=%d:%d inner=%d:%d", params.TextDocument.URI, params.Position.Line, params.Position.Character, embeddedFuncName(fn), region.region.StartLine, region.region.EndLine, inner.Line, inner.Character)
-				completions := s.manager.GetCompletions()
+				completions := s.manager.GetCompletionsForURI(params.TextDocument.URI)
 				if expected, ok := s.expectedCompletionType(params.TextDocument.URI, region, inner, fn); ok {
 					for i := range completions.Items {
 						if symbol, found := s.manager.FindFunctionForURI(completions.Items[i].Label, params.TextDocument.URI); found && len(symbol.Params) > 0 && symbol.ParamTypes[symbol.Params[0]] == expected {
@@ -257,7 +302,7 @@ func (s *Server) handle(msg requestMessage) error {
 				return s.writeResponse(msg.ID, completions, nil)
 			}
 		}
-		return s.writeResponse(msg.ID, s.manager.GetCompletions(), nil)
+		return s.writeResponse(msg.ID, s.manager.GetCompletionsForURI(params.TextDocument.URI), nil)
 	case "textDocument/definition":
 		return s.handleDefinition(msg)
 	case "textDocument/hover":
@@ -361,10 +406,7 @@ func (s *Server) handleCodeAction(msg requestMessage) error {
 }
 
 func scanRootsFromSettings(settings settingsPayload) []index.ScanRoot {
-	roots := make([]index.ScanRoot, 0, len(settings.HaxallPaths)+len(settings.ExternalPaths))
-	for _, path := range settings.HaxallPaths {
-		roots = append(roots, index.ScanRoot{Path: path, Kind: index.ScanRootHaxall})
-	}
+	roots := make([]index.ScanRoot, 0, len(settings.ExternalPaths))
 	for _, path := range settings.ExternalPaths {
 		roots = append(roots, index.ScanRoot{Path: path, Kind: index.ScanRootExternal})
 	}
@@ -434,17 +476,42 @@ func (s *Server) updateWorkspaceFolders(event workspaceFoldersChangeEvent) {
 	s.workspaceFolders = folders
 }
 
-func (s *Server) updateWatchedFiles(changes []fileEvent) {
+func (s *Server) updateWatchedFiles(changes []fileEvent) error {
 	if s.manager == nil {
-		return
+		return nil
 	}
+	archiveChanged := false
+	sourceChanged := false
+	var directories []string
 	for _, change := range changes {
 		path := pathFromURI(change.URI)
-		if !isSupportedWatchedPath(path) || !s.isSelectedWorkspacePath(path) {
+		if change.Type < 1 || change.Type > 3 {
 			continue
 		}
+		info, err := os.Stat(path)
+		if (err == nil && info.IsDir()) || (change.Type == 3 && s.manager.HasIndexedDescendants(path)) || (!isSupportedWatchedPath(path) && change.Type == 3) {
+			directories = append(directories, path)
+			continue
+		}
+		if !isSupportedWatchedPath(path) || !s.manager.IsScanPath(path) {
+			continue
+		}
+		sourceChanged = true
+		if strings.EqualFold(filepath.Ext(path), ".xetolib") {
+			archiveChanged = true
+		}
 		if change.Type == 3 {
+			if content, open := s.document(change.URI); open {
+				s.manager.UpdateDocument(change.URI, content)
+				continue
+			}
 			s.manager.RemoveDocument(change.URI)
+			continue
+		}
+		if strings.EqualFold(filepath.Ext(path), ".xetolib") {
+			if err := s.manager.UpdateArchive(change.URI); err != nil {
+				serverLog.Printf("archive update rejected %s: %v", path, err)
+			}
 			continue
 		}
 		if content, ok := s.document(change.URI); ok {
@@ -455,6 +522,30 @@ func (s *Server) updateWatchedFiles(changes []fileEvent) {
 			s.manager.UpdateDocument(change.URI, string(content))
 		}
 	}
+	if len(directories) > 0 && s.manager.ReconcilePaths(directories) {
+		s.reapplyOpenDocuments()
+		archiveChanged, sourceChanged = true, true
+	}
+	if archiveChanged {
+		if err := s.writeNotification("axonLsp/archiveSourcesChanged", struct{}{}); err != nil {
+			return err
+		}
+	}
+	if sourceChanged {
+		return s.publishOpenDiagnostics()
+	}
+	return nil
+}
+
+func (s *Server) reconcileSources(paths []string) error {
+	if s.manager == nil || !s.manager.ReconcilePaths(paths) {
+		return nil
+	}
+	s.reapplyOpenDocuments()
+	if err := s.writeNotification("axonLsp/archiveSourcesChanged", struct{}{}); err != nil {
+		return err
+	}
+	return s.publishOpenDiagnostics()
 }
 
 func (s *Server) isSelectedWorkspacePath(path string) bool {
@@ -469,7 +560,7 @@ func (s *Server) isSelectedWorkspacePath(path string) bool {
 
 func isSupportedWatchedPath(path string) bool {
 	switch strings.ToLower(filepath.Ext(path)) {
-	case ".axon", ".trio", ".fan", ".xeto":
+	case ".axon", ".trio", ".fan", ".xeto", ".xetolib":
 		return true
 	default:
 		return false
@@ -720,6 +811,9 @@ func keywordRange(keyword parser.KeywordRange) index.Range {
 }
 
 func (s *Server) publishDiagnostics(uri string) error {
+	if strings.HasPrefix(uri, "axon-ext:/xetolib/") {
+		return nil
+	}
 	if s.manager == nil {
 		return nil
 	}
@@ -1052,26 +1146,11 @@ func expressionLiteralType(expression axon.Expr) (string, bool) {
 			}
 		}
 	case *axon.LiteralExpr:
-		switch value.Kind {
-		case axon.TokenReference:
-			return "Ref", true
-		case axon.TokenNumber:
-			return "Number", true
-		case axon.TokenString:
-			if strings.HasPrefix(value.Value, "`") {
-				return "Uri", true
-			}
-			return "Str", true
-		case axon.TokenKeyword:
-			switch value.Value {
-			case "true", "false":
-				return "Bool", true
-			case "null":
-				return "null", true
-			case "na", "m":
-				return "Marker", true
-			}
+		typeName, known := axon.LiteralType(value)
+		if typeName == "None" {
+			typeName = "null"
 		}
+		return typeName, known
 	case *axon.ListExpr:
 		return "List", true
 	case *axon.MapExpr:
@@ -1192,14 +1271,9 @@ func (v embeddedRegionView) innerLine(line int) (string, bool) {
 }
 
 func (s *Server) embeddedRegionAt(uri string, pos index.Position) (embeddedRegionView, *xeto.ParsedFunction, index.Position, bool) {
-	doc, ok := s.document(uri)
+	doc, ok := s.documentSource(uri)
 	if !ok {
-		path := pathFromURI(uri)
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return embeddedRegionView{}, nil, index.Position{}, false
-		}
-		doc = string(content)
+		return embeddedRegionView{}, nil, index.Position{}, false
 	}
 	fn, region, ok := xeto.FindEmbeddedAxonRegion(uri, doc, pos.Line, pos.Character)
 	if !ok {
@@ -1263,6 +1337,12 @@ func (s *Server) maskedSource(uri string) (lexer.MaskedSource, bool) {
 }
 
 func (s *Server) documentSource(uri string) (string, bool) {
+	if strings.HasPrefix(uri, "axon-ext:/xetolib/") {
+		if s.manager == nil {
+			return "", false
+		}
+		return s.manager.ArchiveContent(uri)
+	}
 	if doc, ok := s.document(uri); ok {
 		return doc, true
 	}
