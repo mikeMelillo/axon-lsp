@@ -207,6 +207,16 @@ func TestParseRecoversFromMalformedExpression(t *testing.T) {
 	}
 }
 
+func TestMissingDeclarationValuePreservesFollowingLambda(t *testing.T) {
+	parsed := Parse("src:\n() => do\n  value: 1\nend")
+	if len(parsed.Errors) != 1 || len(parsed.Expressions) != 2 {
+		t.Fatalf("missing declaration value must not consume the next statement: %#v", parsed)
+	}
+	if _, ok := parsed.Expressions[1].(*LambdaExpr); !ok {
+		t.Fatalf("following lambda was lost during recovery: %T", parsed.Expressions[1])
+	}
+}
+
 func TestParseTreatsMultilineBlockCommentAsStatementBoundary(t *testing.T) {
 	result := Parse("first() /* comment starts\nand ends */ second()")
 	if len(result.Errors) != 0 || len(result.Expressions) != 2 {

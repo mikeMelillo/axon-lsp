@@ -41,21 +41,35 @@ completion and argument diagnostics remain separate phases. Phase 4 now ranks
 functions after a typed receiver or at a typed argument position, and includes
 known compatible variables from the current embedded scope.
 
-Phase 5 reports definite primitive literal mismatches only. Phase 6 includes
-primitive literal categories and compatibility rules; structural Xeto slot
-compatibility remains intentionally deferred because it requires stronger
-semantic modeling than this diagnostic pass provides.
+Phase 5 reports definite primitive argument incompatibilities using literal
+types and available function-return metadata. Additional compatibility rules
+and structural Xeto slot checks remain deferred to Phase 6 because they require
+stronger semantic modeling than this diagnostic pass provides.
 
-Phase 5 follow-ups are active: diagnostics must preserve complete expression
-ranges, distinguish unresolved identifiers from unknown types, and report
-missing required arguments only when signature metadata establishes them.
+Phase 5 preserves source-spanned argument ranges, distinguishes unresolved
+receivers/simple argument identifiers from unknown types, and reports missing
+required arguments only when signature metadata establishes them. General
+identifier validation and flow-sensitive inference remain follow-ups.
 
 Dot calls with and without parentheses validate their receiver as the first
 argument. Explicit Xeto `axon` default metadata permits omission; default
 presence is separate from nullable type metadata and is preserved through
 source/archive indexing and cache serialization. Nullable function returns
-are not treated as definite null values. Same-line declaration/use scope and
-complete variable type inference remain follow-ups.
+are not treated as definite null values.
+
+Trap expressions (`rec->tag`) have their own AST node and primary/postfix
+precedence. Tag keys are literal names, not dot-call functions or variable
+references. Receivers are validated except where signature metadata establishes
+filter-path syntax. Trap results remain unknown: no runtime record resolution,
+tag-existence checks, or structural slot-type inference is attempted.
+
+Scope analysis uses source-spanned definitions and lexical function scopes.
+`:` declares; `=` resolves an existing binding without creating a new one.
+Position-aware diagnostics distinguish same-line definition/use order. Parameters
+and captured bindings may be reassigned, and nested definitions remain local.
+After a reassignment, value-type inference conservatively returns unknown rather
+than reusing stale initializer or parameter type information. Complete
+position-aware editor inference and control-flow analysis remain deferred.
 
 ## Acceptance Fixtures
 
@@ -68,7 +82,14 @@ result: someFunction(text)
 ```
 
 Tests must also cover nested calls, multiline calls, shadowing, reassignment,
-and method-style calls.
+method-style calls, trap chains, filter paths, and incomplete-arrow recovery.
+Host integration tests verify Trio/Xeto requests and UTF-16 diagnostic mapping;
+AST shape and scope-ordering combinations belong in focused unit tests.
+
+The 0.4.3 changes passed the full Go test suite, race detection, vet, client
+watcher tests, and TypeScript compilation. Manual VS Code smoke testing was
+also reported passing. These results validate the current conservative rules,
+not the deferred flow-sensitive or structural analysis.
 
 ## Decision Log
 

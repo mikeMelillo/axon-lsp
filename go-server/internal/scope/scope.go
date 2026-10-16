@@ -1,19 +1,15 @@
-// Package scope provides a shared, conservative binding analysis for Axon
-// source. It deliberately models function and lambda bodies rather than using
-// indentation as a general scope boundary.
+// Package scope provides conservative, source-ordered Axon binding analysis.
+// Functions create lexical scopes; ordinary do/if blocks do not.
 package scope
 
 import (
 	"regexp"
 	"strings"
+	"unicode/utf16"
 
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/axon"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/lexer"
 )
-
-var lambdaPattern = regexp.MustCompile(`\(?\s*([A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*)\s*\)?\s*=>`)
-var assignmentPattern = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*([=:])`)
-var catchPattern = regexp.MustCompile(`\bcatch\s*(?:\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)|([A-Za-z_][A-Za-z0-9_]*))`)
-var blockPattern = regexp.MustCompile(`\b(do|end)\b`)
 
 type Binding struct {
 	Name       string
@@ -24,162 +20,203 @@ type Binding struct {
 	StartLine  int
 	EndLine    int
 	Parameter  bool
+
+	scope   int
+	visible axon.Position
+	until   *axon.Position
+}
+
+type lexicalScope struct {
+	parent int
+	span   axon.SourceSpan
+}
+
+type assignment struct {
+	name     string
+	position axon.Position
 }
 
 type Model struct {
-	lines    []string
-	bindings []Binding
+	lines       []string
+	bindings    []Binding
+	scopes      []lexicalScope
+	assignments []assignment
 }
 
-type functionRange struct {
-	start           int
-	end             int
-	bodyStartColumn int
-}
+// Retain catch bindings for both editor-supported spellings, including bodies
+// that the expression parser can only partially recover while being edited.
+var catchPattern = regexp.MustCompile(`\bcatch\s*(?:\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)|([A-Za-z_][A-Za-z0-9_]*))`)
+var blockPattern = regexp.MustCompile(`\b(do|end)\b`)
 
 func Analyze(source string, parameters map[string]string) *Model {
-	masked := lexer.MaskComments(source).Text
-	lines := strings.Split(masked, "\n")
-	ranges := lambdaRanges(lines)
-	model := &Model{lines: lines}
-	lastLine := len(lines) - 1
-	if lastLine < 0 {
-		lastLine = 0
-	}
-
+	source = lexer.MaskComments(source).Text
+	lines := strings.Split(source, "\n")
+	last := axon.Position{Line: len(lines) - 1, Character: len(utf16.Encode([]rune(lines[len(lines)-1])))}
+	m := &Model{lines: lines, scopes: []lexicalScope{{parent: -1, span: axon.SourceSpan{EndOffset: len(source), End: last}}}}
 	for name, typ := range parameters {
-		model.bindings = append(model.bindings, Binding{
+		m.bindings = append(m.bindings, Binding{
 			Name: name, Type: typ, Line: -1, Column: -1,
-			StartLine: 0, EndLine: lastLine, Parameter: true,
+			EndLine: last.Line, Parameter: true,
 		})
 	}
-
-	for lineNo, line := range lines {
-		if match := assignmentPattern.FindStringSubmatchIndex(line); match != nil {
-			separator := line[match[4]:match[5]]
-			if separator == "=" && match[1] < len(line) && (line[match[1]] == '=' || line[match[1]] == '>') {
-				continue
-			}
-			name := line[match[2]:match[3]]
-			endLine, shortest := lastLine, lastLine+1
-			for _, r := range ranges {
-				if lineNo < r.start || lineNo > r.end || (lineNo == r.start && match[2] < r.bodyStartColumn) {
-					continue
-				}
-				if length := r.end - r.start; length < shortest {
-					endLine, shortest = r.end, length
-				}
-			}
-			model.bindings = append(model.bindings, Binding{
-				Name: name, Expression: strings.TrimSpace(line[match[1]:]),
-				Line: lineNo, Column: match[2], StartLine: lineNo + 1, EndLine: endLine,
-			})
+	var collect func(axon.Expr, int)
+	collect = func(node axon.Expr, scopeID int) {
+		if node == nil {
+			return
 		}
-	}
-
-	for lineNo, line := range lines {
-		for _, match := range lambdaPattern.FindAllStringSubmatchIndex(line, -1) {
-			endLine := lineNo
-			for _, r := range ranges {
-				if r.start == lineNo && r.bodyStartColumn == match[1] && r.end > endLine {
-					endLine = r.end
-				}
-			}
-			for _, nameRange := range splitNameRanges(line, match[2], match[3]) {
-				model.bindings = append(model.bindings, Binding{
-					Name: strings.TrimSpace(nameRange), Line: lineNo, Column: match[2],
-					StartLine: lineNo, EndLine: endLine, Parameter: true,
+		if lambda, ok := node.(*axon.LambdaExpr); ok {
+			child := len(m.scopes)
+			m.scopes = append(m.scopes, lexicalScope{parent: scopeID, span: lambda.Span()})
+			for _, name := range lambda.Parameters {
+				m.bindings = append(m.bindings, Binding{
+					Name: name, Line: lambda.Source.Start.Line, Column: lambda.Source.Start.Character,
+					StartLine: lambda.Source.Start.Line, EndLine: lambda.Source.End.Line,
+					Parameter: true, scope: child, visible: lambda.Source.Start,
 				})
 			}
+			collect(lambda.Body, child)
+			return
 		}
-	}
-
-	for lineNo, line := range lines {
-		for _, match := range catchPattern.FindAllStringSubmatchIndex(line, -1) {
-			nameStart, nameEnd := match[2], match[3]
-			if nameStart < 0 {
-				nameStart, nameEnd = match[4], match[5]
-			}
-			endLine := lineNo
-			if doOffset := findWord(line[match[1]:], "do"); doOffset >= 0 {
-				if found, ok := matchingEnd(lines, lineNo, match[1]+doOffset); ok {
-					endLine = found
-				} else {
-					endLine = lastLine
+		if binary, ok := node.(*axon.BinaryExpr); ok {
+			if name, ok := binary.Left.(*axon.NameExpr); ok {
+				switch binary.Operator {
+				case ":":
+					span := binary.Right.Span()
+					m.bindings = append(m.bindings, Binding{
+						Name: name.Name, Expression: source[span.StartOffset:span.EndOffset],
+						Line: name.Source.Start.Line, Column: name.Source.Start.Character,
+						StartLine: span.End.Line, EndLine: m.scopes[scopeID].span.End.Line,
+						scope: scopeID, visible: span.End,
+					})
+				case "=":
+					m.assignments = append(m.assignments, assignment{name: name.Name, position: name.Source.Start})
 				}
 			}
-			model.bindings = append(model.bindings, Binding{
-				Name: line[nameStart:nameEnd], Line: lineNo, Column: nameStart,
+		}
+		for _, child := range axon.Children(node) {
+			collect(child, scopeID)
+		}
+	}
+	for _, expression := range axon.Parse(source).Expressions {
+		collect(expression, 0)
+	}
+	for lineNo, line := range lines {
+		for _, match := range catchPattern.FindAllStringSubmatchIndex(line, -1) {
+			start, end := match[2], match[3]
+			if start < 0 {
+				start, end = match[4], match[5]
+			}
+			pos := axon.Position{Line: lineNo, Character: len(utf16.Encode([]rune(line[:start])))}
+			endLine, endColumn := lineNo, len(utf16.Encode([]rune(line)))
+			if offset := findWord(line[match[1]:], "do"); offset >= 0 {
+				endLine, endColumn = matchingEnd(lines, lineNo, match[1]+offset)
+			}
+			until := axon.Position{Line: endLine, Character: endColumn}
+			m.bindings = append(m.bindings, Binding{
+				Name: line[start:end], Line: lineNo, Column: pos.Character,
 				StartLine: lineNo, EndLine: endLine, Parameter: true,
+				scope: m.scopeAt(pos), visible: pos, until: &until,
 			})
 		}
 	}
-	return model
+	return m
+}
+
+func before(a, b axon.Position) bool {
+	return a.Line < b.Line || a.Line == b.Line && a.Character < b.Character
+}
+
+func (m *Model) scopeAt(position axon.Position) int {
+	selected := 0
+	for i, scope := range m.scopes {
+		if !before(position, scope.span.Start) && !before(scope.span.End, position) &&
+			!before(scope.span.Start, m.scopes[selected].span.Start) && !before(m.scopes[selected].span.End, scope.span.End) {
+			selected = i
+		}
+	}
+	return selected
+}
+
+func (m *Model) resolveIndex(name string, position axon.Position) (int, bool) {
+	for scopeID := m.scopeAt(position); scopeID >= 0; scopeID = m.scopes[scopeID].parent {
+		selected := -1
+		for i, binding := range m.bindings {
+			if binding.until != nil && before(*binding.until, position) {
+				continue
+			}
+			if binding.scope == scopeID && binding.Name == name && !before(position, binding.visible) &&
+				(selected < 0 || !before(binding.visible, m.bindings[selected].visible)) {
+				selected = i
+			}
+		}
+		if selected >= 0 {
+			return selected, true
+		}
+	}
+	return 0, false
+}
+
+// ResolveAt resolves a name at an exact UTF-16 position. Reassignment never
+// declares a name or changes its lexical owner. Mutated types are unknown until
+// flow-sensitive inference can establish a safe result.
+func (m *Model) ResolveAt(name string, line, character int) (Binding, bool) {
+	position := axon.Position{Line: line, Character: character}
+	i, found := m.resolveIndex(name, position)
+	if !found {
+		return Binding{}, false
+	}
+	binding := m.bindings[i]
+	for _, assignment := range m.assignments {
+		if assignment.name == name && before(assignment.position, position) {
+			if target, ok := m.resolveIndex(name, assignment.position); ok && target == i {
+				binding.Type, binding.Expression = "", ""
+			}
+		}
+	}
+	return binding, true
+}
+
+// Resolve and NamesAt provide a line-oriented view for existing inference
+// consumers; semantic diagnostics use ResolveAt for statement ordering.
+func (m *Model) Resolve(name string, line int) (Binding, bool) {
+	return m.ResolveAt(name, line, m.lineEnd(line))
 }
 
 func (m *Model) NamesAt(line int) map[string]struct{} {
 	result := map[string]struct{}{}
 	for _, binding := range m.bindings {
-		if line >= binding.StartLine && line <= binding.EndLine {
+		if _, ok := m.Resolve(binding.Name, line); ok {
 			result[binding.Name] = struct{}{}
 		}
 	}
 	return result
 }
 
-// Resolve returns the most specific visible binding for a name at a line.
-func (m *Model) Resolve(name string, line int) (Binding, bool) {
-	var selected Binding
-	found := false
-	for _, binding := range m.bindings {
-		if binding.Name != name || (line != binding.Line && line < binding.StartLine) || line > binding.EndLine {
-			continue
-		}
-		if !found || binding.EndLine-binding.StartLine < selected.EndLine-selected.StartLine ||
-			(binding.EndLine-binding.StartLine == selected.EndLine-selected.StartLine && binding.Line > selected.Line) {
-			selected, found = binding, true
-		}
+func (m *Model) lineEnd(line int) int {
+	if line < 0 || line >= len(m.lines) {
+		return 0
 	}
-	return selected, found
+	return len(utf16.Encode([]rune(m.lines[line])))
 }
 
-func lambdaRanges(lines []string) []functionRange {
-	var ranges []functionRange
-	for lineNo, line := range lines {
-		for _, match := range lambdaPattern.FindAllStringSubmatchIndex(line, -1) {
-			endLine := lineNo
-			if doOffset := findWord(line[match[1]:], "do"); doOffset >= 0 {
-				if found, ok := matchingEnd(lines, lineNo, match[1]+doOffset); ok {
-					endLine = found
-				} else {
-					endLine = len(lines) - 1
-				}
-			}
-			ranges = append(ranges, functionRange{start: lineNo, end: endLine, bodyStartColumn: match[1]})
-		}
-	}
-	return ranges
-}
-
-func matchingEnd(lines []string, startLine, startColumn int) (int, bool) {
+func matchingEnd(lines []string, startLine, startColumn int) (int, int) {
 	depth := 0
 	for lineNo := startLine; lineNo < len(lines); lineNo++ {
-		line := lines[lineNo]
-		if lineNo == startLine {
-			line = line[startColumn:]
-		}
-		for _, match := range blockPattern.FindAllStringSubmatch(line, -1) {
-			if match[1] == "do" {
+		for _, token := range axon.Lex(lines[lineNo]) {
+			if lineNo == startLine && token.Start < startColumn || token.Kind != axon.TokenKeyword {
+				continue
+			}
+			if token.Text == "do" {
 				depth++
-			} else {
+			} else if token.Text == "end" {
 				depth--
 				if depth == 0 {
-					return lineNo, true
+					return lineNo, token.EndPos.Character
 				}
 			}
 		}
 	}
-	return len(lines) - 1, false
+	return len(lines) - 1, len(utf16.Encode([]rune(lines[len(lines)-1])))
 }
 
 func findWord(value, word string) int {
@@ -189,12 +226,4 @@ func findWord(value, word string) int {
 		}
 	}
 	return -1
-}
-
-func splitNameRanges(line string, start, end int) []string {
-	if start < 0 || end < start || end > len(line) {
-		return nil
-	}
-	parts := strings.Split(line[start:end], ",")
-	return parts
 }

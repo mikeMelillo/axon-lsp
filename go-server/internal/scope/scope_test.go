@@ -63,3 +63,58 @@ func TestBindingsDoNotLeakAcrossSeparateFunctionBodies(t *testing.T) {
 		t.Fatal("binding leaked into a separate function body")
 	}
 }
+
+func TestSourceOrderedDefinitionsAndReassignments(t *testing.T) {
+	source := "count: 0; count = 1; inspect(count)\nf: () => do\n  count: \"inner\"\n  count = null\nend\ninspect(count)"
+	model := Analyze(source, nil)
+	if _, ok := model.ResolveAt("count", 0, 0); ok {
+		t.Fatal("definition must not be visible before its initializer")
+	}
+	if binding, ok := model.ResolveAt("count", 0, 10); !ok || binding.Expression != "0" {
+		t.Fatalf("definition must be visible to same-line assignment: %#v %t", binding, ok)
+	}
+	if binding, ok := model.Resolve("count", 5); !ok || binding.Expression != "" {
+		t.Fatalf("mutated initializer must not supply a stale type: %#v %t", binding, ok)
+	}
+	if _, ok := Analyze("absentLocal = 1\ninspect(absentLocal)", nil).Resolve("absentLocal", 1); ok {
+		t.Fatal("assignment must not declare a variable")
+	}
+}
+
+func TestClosureAssignmentAndShadowing(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, want string
+	}{
+		{"capture", "count = null", ""},
+		{"shadow", "count: null\ncount = 2", "0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			model := Analyze("count: 0\nf: () => do\n"+tc.body+"\nend\ninspect(count)", nil)
+			binding, ok := model.Resolve("count", len(model.lines)-1)
+			if !ok || binding.Expression != tc.want {
+				t.Fatalf("incorrect lexical assignment owner: %#v %t", binding, ok)
+			}
+		})
+	}
+}
+
+func TestCallArgumentIsNotALambdaParameter(t *testing.T) {
+	model := Analyze("grid.use(absentLocal, y => inspect(absentLocal))", map[string]string{"grid": "Grid"})
+	if _, ok := model.ResolveAt("absentLocal", 0, 40); ok {
+		t.Fatal("a preceding call argument is not part of a single-parameter lambda")
+	}
+	if binding, ok := Analyze("count = null\ninspect(count)", map[string]string{"count": "Number"}).Resolve("count", 1); !ok || binding.Type != "" {
+		t.Fatalf("reassigned parameter must not retain stale type metadata: %#v %t", binding, ok)
+	}
+}
+
+func TestCatchBindingIsCapturedByNestedLambda(t *testing.T) {
+	source := "try do\n  work()\nend catch (e) do\n  f: () => do\n    inspect(e)\n  end\nend\ninspect(e)"
+	model := Analyze(source, nil)
+	if _, ok := model.Resolve("e", 4); !ok {
+		t.Fatal("nested function should capture the catch binding")
+	}
+	if _, ok := model.Resolve("e", 7); ok {
+		t.Fatal("catch binding must not leak beyond its body")
+	}
+}

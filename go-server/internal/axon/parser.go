@@ -84,6 +84,17 @@ type MemberExpr struct {
 func (n *MemberExpr) Span() SourceSpan { return n.Source }
 func (*MemberExpr) axonExpr()          {}
 
+// TrapExpr looks up a literal tag name, unlike MemberExpr's dot-call callee.
+type TrapExpr struct {
+	Receiver Expr
+	Name     string
+	NameSpan SourceSpan
+	Source   SourceSpan
+}
+
+func (n *TrapExpr) Span() SourceSpan { return n.Source }
+func (*TrapExpr) axonExpr()          {}
+
 type CallExpr struct {
 	Callee    Expr
 	Arguments []Expr
@@ -244,7 +255,12 @@ func (p *expressionParser) parseSequence(stops map[string]bool) []Expr {
 		expression := p.parseExpression(0)
 		if name, ok := expression.(*NameExpr); ok && p.at(TokenOperator, ":") {
 			colon := p.consume()
-			value := p.parseExpression(0)
+			var value Expr
+			// Leave a statement boundary intact during recovery. This also
+			// preserves lambdas following a multiline Trio src: field.
+			if !p.atKind(TokenNewline) && !p.at(TokenEOF, "") && !p.at(TokenOperator, ";") {
+				value = p.parseExpression(0)
+			}
 			if value != nil {
 				expression = &BinaryExpr{Left: name, Operator: ":", Right: value, Source: mergeSpan(name.Span(), value.Span())}
 			} else {
@@ -295,6 +311,17 @@ func (p *expressionParser) parseExpression(minPrecedence int) Expr {
 			}
 			p.consume()
 			left = &MemberExpr{Name: name.Text, NameSpan: spanOf(name), Receiver: left, Source: mergeSpan(left.Span(), spanOf(name))}
+			continue
+		}
+		if p.at(TokenOperator, "->") {
+			arrow := p.consume()
+			name := p.current()
+			if name.Kind != TokenIdentifier && name.Kind != TokenTypeName {
+				p.addError("expected tag name after '->'", arrow, arrow)
+				return left
+			}
+			p.consume()
+			left = &TrapExpr{Receiver: left, Name: name.Text, NameSpan: spanOf(name), Source: mergeSpan(left.Span(), spanOf(name))}
 			continue
 		}
 		if p.at(TokenOperator, "[") {
@@ -804,7 +831,7 @@ func CallAt(source string, position Position) (CallContext, bool) {
 				}
 			}
 		}
-		for _, child := range children(node) {
+		for _, child := range Children(node) {
 			visit(child)
 		}
 	}
@@ -837,7 +864,8 @@ func positionAfter(left, right Position) bool {
 	return left.Line > right.Line || left.Line == right.Line && left.Character > right.Character
 }
 
-func children(expression Expr) []Expr {
+// Children returns semantic children; literal trap keys are not expressions.
+func Children(expression Expr) []Expr {
 	switch value := expression.(type) {
 	case *GroupExpr:
 		return []Expr{value.Expression}
@@ -848,6 +876,8 @@ func children(expression Expr) []Expr {
 	case *BinaryExpr:
 		return []Expr{value.Left, value.Right}
 	case *MemberExpr:
+		return []Expr{value.Receiver}
+	case *TrapExpr:
 		return []Expr{value.Receiver}
 	case *CallExpr:
 		return append([]Expr{value.Callee}, value.Arguments...)

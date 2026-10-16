@@ -7,21 +7,16 @@ import (
 	"testing"
 )
 
-func TestTemporalLiteralInference(t *testing.T) {
-	for source, want := range map[string]string{
-		"2026-01-01": "Date", "12:30:00": "Time",
-		"2026-01-01T12:30:00Z": "DateTime", "42": "Number",
-		"null": "null", "`/path`": "Uri", "true": "Bool",
-	} {
-		t.Run(source, func(t *testing.T) {
-			if got, ok := literalType(source); !ok || got != want {
-				t.Fatalf("literalType(%q) = %q, %t; want %q", source, got, ok, want)
-			}
-		})
-	}
-}
-
 func TestEmbeddedSmokeDiagnostics(t *testing.T) {
+	s := newWorkspaceTestServer(t, t.TempDir())
+	s.manager.UpdateDocument("file:///signatures.xeto", `+Funcs {
+  foo: Func { a: Number, opts: Dict? <axon:"null">, returns: Number }
+  bar: Func { a: Number, opts: Dict <axon:"null">, returns: Number }
+  dated: Func { date: Date, returns: Date }
+  produce: Func { returns: Dict? }
+  consume: Func { value: Dict?, returns: Dict? }
+  make: Func { value: Number, returns: Dict? }
+}`)
 	for _, tc := range []struct {
 		name, body, want string
 	}{
@@ -36,15 +31,7 @@ func TestEmbeddedSmokeDiagnostics(t *testing.T) {
 		{"nullable chain", "1.make.consume", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := newWorkspaceTestServer(t, t.TempDir())
-			s.manager.UpdateDocument("file:///signatures.xeto", `+Funcs {
-  foo: Func { a: Number, opts: Dict? <axon:"null">, returns: Number }
-  bar: Func { a: Number, opts: Dict <axon:"null">, returns: Number }
-  dated: Func { date: Date, returns: Date }
-  produce: Func { returns: Dict? }
-  consume: Func { value: Dict?, returns: Dict? }
-  make: Func { value: Number, returns: Dict? }
-}`)
+			s.writer = &bytes.Buffer{}
 			uri := "file:///smoke.xeto"
 			doc := fmt.Sprintf("+Funcs {\n  smoke: Func { returns: Obj\n    <axon:---\n    %s\n    --->\n  }\n}", tc.body)
 			s.setDocument(uri, doc)

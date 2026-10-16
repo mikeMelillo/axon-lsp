@@ -21,42 +21,9 @@ func TestReportsUndefinedFunction(t *testing.T) {
 	}
 }
 
-func TestDotReceiversAreValidatedWithoutCalleeSignatures(t *testing.T) {
-	mgr := testXetoManager(t, `+Funcs {
-  readAll: Func { filter: Filter, returns: Grid }
-  hisRead: Func { points: Grid, range: Date, returns: Grid }
-  untyped: Func {}
-}`)
-	for _, callee := range []string{"hisRead(2026-01-01)", "hisRead", "untyped()", "untyped", "unknown()", "unknown"} {
-		source := "points: readAll(point)\ndata: poinTs." + callee
-		diagnostics := Validate("file:///test.xeto", source, mgr)
-		found := 0
-		for _, diagnostic := range diagnostics {
-			if diagnostic.Message == "Undefined variable: poinTs" {
-				found++
-				if diagnostic.Range != (index.Range{Start: index.Position{Line: 1, Character: 6}, End: index.Position{Line: 1, Character: 12}}) {
-					t.Errorf("%s: incorrect receiver range: %#v", callee, diagnostic)
-				}
-			}
-		}
-		if found != 1 {
-			t.Errorf("%s: expected exactly one receiver diagnostic: %#v", callee, diagnostics)
-		}
-	}
-	for _, source := range []string{
-		"points: readAll(point)\ndata: points.hisRead(2026-01-01)",
-		"points: unavailableValue\ndata: points.untyped",
-		"points: unavailableValue\ndata: points.untyped()",
-	} {
-		if diagnostics := Validate("file:///test.xeto", source, mgr); len(diagnostics) != 0 {
-			t.Errorf("declared receiver must not be undefined: %q: %#v", source, diagnostics)
-		}
-	}
-}
-
-func TestPlaneNotesUnknownCalleeStillChecksReceiver(t *testing.T) {
-	mgr := testXetoManager(t, "+Funcs {\n  readAll: Func { filter: Filter, returns: Grid }\n}")
-	for _, suffix := range []string{"hisRead(2026-01-01)", "hisRead", "unknown(2026-01-01)", "unknown", "hisRead().unknown", "hisRead.unknown()", "unknownFirst.unknown()"} {
+func TestDotReceiverResolutionAndChains(t *testing.T) {
+	mgr := testXetoManager(t, "+Funcs {\n  readAll: Func { filter: Filter, returns: Grid }\n  untyped: Func {}\n}")
+	for _, suffix := range []string{"hisRead(2026-01-01)", "hisRead", "untyped()", "untyped", "unknown(2026-01-01)", "unknown", "hisRead().unknown", "hisRead.unknown()", "unknownFirst.unknown()"} {
 		for _, receiver := range []string{"points", "poinTs"} {
 			source := "points: readAll(point)\ndata: " + receiver + "." + suffix
 			diagnostics := Validate("file:///test.xeto", source, mgr)
@@ -64,6 +31,9 @@ func TestPlaneNotesUnknownCalleeStillChecksReceiver(t *testing.T) {
 			for _, diagnostic := range diagnostics {
 				if diagnostic.Message == "Undefined variable: poinTs" {
 					variables++
+					if diagnostic.Range != (index.Range{Start: index.Position{Line: 1, Character: 6}, End: index.Position{Line: 1, Character: 12}}) {
+						t.Errorf("%q: incorrect receiver range: %#v", source, diagnostic)
+					}
 				}
 				if strings.HasPrefix(diagnostic.Message, "Undefined function:") {
 					callees++
@@ -82,6 +52,11 @@ func TestPlaneNotesUnknownCalleeStillChecksReceiver(t *testing.T) {
 			if variables != wantVariables || callees != wantCallees || len(diagnostics) != wantVariables+wantCallees {
 				t.Errorf("%q: expected %d receiver and %d callee diagnostics: %#v", source, wantVariables, wantCallees, diagnostics)
 			}
+		}
+	}
+	for _, suffix := range []string{"untyped", "untyped()"} {
+		if diagnostics := Validate("file:///test.xeto", "points: unavailableValue\ndata: points."+suffix, mgr); len(diagnostics) != 0 {
+			t.Errorf("defined receiver with unknown type must not be undefined: %#v", diagnostics)
 		}
 	}
 }
@@ -286,7 +261,7 @@ func TestCapitalizedArgumentResolvesAgainstIndexedSpecsAfterLocals(t *testing.T)
 	if diagnostics := Validate(uri, `spec(FooBar)`, mgr); len(diagnostics) != 0 {
 		t.Fatalf("globally indexed Spec name should resolve as an argument: %#v", diagnostics)
 	}
-	if diagnostics := Validate(uri, "LocalThing = value\nspec(LocalThing)", mgr); len(diagnostics) != 0 {
+	if diagnostics := Validate(uri, "LocalThing: value\nspec(LocalThing)", mgr); len(diagnostics) != 0 {
 		t.Fatalf("locally scoped capitalized variable should resolve before Specs: %#v", diagnostics)
 	}
 	diagnostics := Validate(uri, `spec(UnknownSpec)`, mgr)
@@ -397,7 +372,6 @@ func TestInlineFunctionParametersAreScopedUnknowns(t *testing.T) {
 	for _, source := range []string{
 		`grid.use(x => inspect(x))`,
 		`grid.use x => inspect(x)`,
-		`grid.use(x, y => inspect(x))`,
 		`grid.use((x, y) => inspect(y))`,
 	} {
 		if diagnostics := ValidateRegionWithScope("file:///test.xeto", source, mgr, true, true, []string{"grid"}); len(diagnostics) != 0 {
@@ -433,7 +407,7 @@ func TestLambdaScopeUsesBlockBoundariesRatherThanIndentation(t *testing.T) {
   inspect: Func { value: Obj }
 }`)
 	for _, bodyIndent := range []string{"  ", ""} {
-		source := "grid: null\ngrid.use(x => do\n" + bodyIndent + "innerVar = x\n" + bodyIndent + "inspect(innerVar)\nend)"
+		source := "grid: null\ngrid.use(x => do\n" + bodyIndent + "innerVar: x\n" + bodyIndent + "inspect(innerVar)\nend)"
 		if diagnostics := Validate("file:///test.xeto", source, mgr); len(diagnostics) != 0 {
 			t.Fatalf("lambda parameter and local should remain scoped through do/end regardless of indentation: %#v", diagnostics)
 		}
@@ -480,7 +454,7 @@ func TestPreviouslyAssignedVariableIsInScopeForCallArguments(t *testing.T) {
 	mgr := testXetoManager(t, `+Funcs {
   replace: Func { receiver: Obj, old: Str, new: Str }
 }`)
-	for _, declaration := range []string{`labels = "abcd"`, `labels: "abcd"`} {
+	for _, declaration := range []string{`labels: "abcd"`, "labels: \"abcd\"\nlabels = \"updated\""} {
 		source := declaration + "\nx: null\nx = x.replace(\"{{label}}\", labels)"
 		if diagnostics := Validate("file:///test.xeto", source, mgr); len(diagnostics) != 0 {
 			t.Errorf("previously declared variable should be recognized in call (%q): %#v", declaration, diagnostics)

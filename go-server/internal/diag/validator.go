@@ -2,6 +2,7 @@ package diag
 
 import (
 	"strings"
+	"unicode/utf16"
 
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/axon"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/index"
@@ -41,23 +42,24 @@ func validate(uri string, source string, manager *index.Manager, clearReferences
 	}
 	diagnostics := []index.Diagnostic{}
 	masked := lexer.MaskComments(source)
+	parsed := axon.Parse(masked.Text)
 	localFuncs, paramScopes := parser.ParseLocalFunctions(masked.Text)
+	// Legacy record recovery is only a fallback. Its line-oriented parameter
+	// ranges must not override lexical scopes established by a complete AST.
+	if len(parsed.Errors) == 0 {
+		paramScopes = nil
+	}
 	parameters := make(map[string]string, len(scopedVariables))
 	for _, name := range scopedVariables {
 		parameters[name] = ""
 	}
 	bindings := scope.Analyze(masked.Text, parameters)
 	lines := strings.Split(masked.Text, "\n")
-	lineScopes := make([]map[string]struct{}, len(lines))
+	lineScopes := &validationScopes{bindings: bindings, parameters: paramScopes}
 	ignoredLines := make([]bool, len(lines))
 	inIgnoredField := false
 
 	for i, line := range lines {
-		lineScope := bindings.NamesAt(i)
-		for name := range paramScopes[i] {
-			lineScope[name] = struct{}{}
-		}
-		lineScopes[i] = lineScope
 		stripped := strings.TrimSpace(line)
 		indent := len(line) - len(strings.TrimLeft(line, " "))
 
@@ -80,7 +82,7 @@ func validate(uri string, source string, manager *index.Manager, clearReferences
 			}
 			_, isLocal := localFuncs[match.Word]
 			_, isParam := paramScopes[i][match.Word]
-			_, isScoped := lineScope[match.Word]
+			_, isScoped := scopedNameAt(lineScopes, i, len(utf16.Encode([]rune(line[:match.Start]))), match.Word)
 			symbol, found := manager.FindFunctionForURI(match.Word, uri)
 			if found {
 				manager.AddReference(match.Word, resolver.Location(uri, i, match.Start, match.End))
@@ -100,16 +102,65 @@ func validate(uri string, source string, manager *index.Manager, clearReferences
 			}
 		}
 	}
-	for _, expression := range axon.Parse(masked.Text).Expressions {
-		diagnostics = append(diagnostics, validateCallsFromAST(uri, masked.Text, expression, manager, localFuncs, paramScopes, lineScopes, ignoredLines, warnMissingArguments)...)
+	for _, expression := range parsed.Expressions {
+		diagnostics = append(diagnostics, validateCallsFromAST(uri, masked.Text, expression, manager, localFuncs, lineScopes, ignoredLines, warnMissingArguments)...)
 	}
 
 	return diagnostics
 }
 
-func validateCallsFromAST(uri, source string, expression axon.Expr, manager *index.Manager, localFuncs map[string]struct{}, paramScopes map[int]map[string]struct{}, lineScopes []map[string]struct{}, ignoredLines []bool, warnMissingArguments bool) []index.Diagnostic {
+func validateCallsFromAST(uri, source string, expression axon.Expr, manager *index.Manager, localFuncs map[string]struct{}, lineScopes *validationScopes, ignoredLines []bool, warnMissingArguments bool) []index.Diagnostic {
 	result := []index.Diagnostic{}
+	// Filter paths name tags rather than Axon variables. Establish context
+	// before visiting traps, including paths inside comparisons and groups.
+	filterTraps := map[*axon.TrapExpr]bool{}
 	visitExpr(expression, func(node axon.Expr) {
+		call, ok := node.(*axon.CallExpr)
+		if !ok {
+			member, ok := node.(*axon.MemberExpr)
+			if !ok {
+				return
+			}
+			call = &axon.CallExpr{Callee: member}
+		}
+		name, _, _, ok := callTarget(call.Callee)
+		fn, found := manager.FindFunctionForURI(name, uri)
+		if !ok || !found {
+			return
+		}
+		args := call.Arguments
+		if member, ok := call.Callee.(*axon.MemberExpr); ok {
+			args = append([]axon.Expr{member.Receiver}, args...)
+		}
+		for i, arg := range args {
+			if isFilterArgument(fn, i) {
+				visitExpr(arg, func(node axon.Expr) {
+					if trap, ok := node.(*axon.TrapExpr); ok {
+						filterTraps[trap] = true
+					}
+				})
+			}
+		}
+	})
+	visitExpr(expression, func(node axon.Expr) {
+		if binary, ok := node.(*axon.BinaryExpr); ok && binary.Operator == "=" {
+			if name, ok := binary.Left.(*axon.NameExpr); ok {
+				pos := name.Span().Start
+				if pos.Line >= 0 && pos.Line < len(ignoredLines) && !ignoredLines[pos.Line] {
+					if _, found := scopedNameAt(lineScopes, pos.Line, pos.Character, name.Name); !found {
+						result = append(result, index.Diagnostic{Range: index.Range{Start: toIndexPosition(pos), End: toIndexPosition(name.Span().End)}, Message: "Undefined assignment target: " + name.Name, Severity: 2})
+					}
+				}
+			}
+		}
+		if trap, ok := node.(*axon.TrapExpr); ok {
+			if !filterTraps[trap] {
+				if name := receiverIdentifier(trap.Receiver); name != nil {
+					result = append(result, undefinedArgumentIdentifier(uri, name, manager, localFuncs, lineScopes, ignoredLines)...)
+				}
+			}
+			return
+		}
 		call, isCall := node.(*axon.CallExpr)
 		member, isMember := node.(*axon.MemberExpr)
 		if !isCall {
@@ -141,7 +192,7 @@ func validateCallsFromAST(uri, source string, expression axon.Expr, manager *ind
 		}
 		if !found {
 			if dotCall {
-				_, scoped := scopedNameAt(lineScopes, calleeLine, name)
+				_, scoped := scopedNameAt(lineScopes, calleeLine, nameSpan.Start.Character, name)
 				_, local := localFuncs[name]
 				if !scoped && !local {
 					result = append(result, index.Diagnostic{Range: index.Range{Start: toIndexPosition(nameSpan.Start), End: toIndexPosition(nameSpan.End)}, Message: "Undefined function: " + name, Severity: 1})
@@ -214,11 +265,16 @@ func callTarget(callee axon.Expr) (string, axon.SourceSpan, int, bool) {
 	}
 }
 
-func scopedNameAt(scopes []map[string]struct{}, line int, name string) (struct{}, bool) {
-	if line < 0 || line >= len(scopes) || scopes[line] == nil {
-		return struct{}{}, false
+type validationScopes struct {
+	bindings   *scope.Model
+	parameters map[int]map[string]struct{}
+}
+
+func scopedNameAt(scopes *validationScopes, line, character int, name string) (struct{}, bool) {
+	if _, ok := scopes.bindings.ResolveAt(name, line, character); ok {
+		return struct{}{}, true
 	}
-	_, ok := scopes[line][name]
+	_, ok := scopes.parameters[line][name]
 	return struct{}{}, ok
 }
 
@@ -268,54 +324,28 @@ func visitExpr(expression axon.Expr, visit func(axon.Expr)) {
 		return
 	}
 	visit(expression)
-	switch value := expression.(type) {
-	case *axon.GroupExpr:
-		visitExpr(value.Expression, visit)
-	case *axon.UnaryExpr:
-		visitExpr(value.Operand, visit)
-	case *axon.BinaryExpr:
-		visitExpr(value.Left, visit)
-		visitExpr(value.Right, visit)
-	case *axon.MemberExpr:
-		visitExpr(value.Receiver, visit)
-	case *axon.CallExpr:
+	children := axon.Children(expression)
+	if value, ok := expression.(*axon.CallExpr); ok {
 		if member, ok := value.Callee.(*axon.MemberExpr); ok {
 			// The explicit call validates this member; only visit its receiver.
-			visitExpr(member.Receiver, visit)
-		} else {
-			visitExpr(value.Callee, visit)
+			children = append([]axon.Expr{member.Receiver}, value.Arguments...)
 		}
-		for _, argument := range value.Arguments {
-			visitExpr(argument, visit)
-		}
-	case *axon.IndexExpr:
-		visitExpr(value.Receiver, visit)
-		visitExpr(value.Index, visit)
-	case *axon.LambdaExpr:
-		visitExpr(value.Body, visit)
-	case *axon.SequenceExpr:
-		for _, item := range value.Expressions {
-			visitExpr(item, visit)
-		}
-	case *axon.ListExpr:
-		for _, item := range value.Elements {
-			visitExpr(item, visit)
-		}
-	case *axon.MapExpr:
-		for _, entry := range value.Entries {
-			visitExpr(entry.Key, visit)
-			visitExpr(entry.Value, visit)
-		}
-	case *axon.IfExpr:
-		visitExpr(value.Condition, visit)
-		visitExpr(value.Then, visit)
-		visitExpr(value.Else, visit)
-	case *axon.TryExpr:
-		visitExpr(value.Body, visit)
-		visitExpr(value.Catch, visit)
-	case *axon.ControlExpr:
-		visitExpr(value.Expression, visit)
 	}
+	for _, child := range children {
+		visitExpr(child, visit)
+	}
+}
+
+func receiverIdentifier(expression axon.Expr) *axon.NameExpr {
+	switch value := expression.(type) {
+	case *axon.NameExpr:
+		return value
+	case *axon.GroupExpr:
+		return receiverIdentifier(value.Expression)
+	case *axon.IndexExpr:
+		return receiverIdentifier(value.Receiver)
+	}
+	return nil
 }
 
 func isFilterArgument(fn index.Symbol, position int) bool {
@@ -337,12 +367,12 @@ func optionalType(typeName string) (string, bool) {
 	return strings.TrimSpace(typeName), false
 }
 
-func undefinedArgumentIdentifier(uri string, name *axon.NameExpr, manager *index.Manager, localFuncs map[string]struct{}, lineScopes []map[string]struct{}, ignoredLines []bool) []index.Diagnostic {
+func undefinedArgumentIdentifier(uri string, name *axon.NameExpr, manager *index.Manager, localFuncs map[string]struct{}, lineScopes *validationScopes, ignoredLines []bool) []index.Diagnostic {
 	line := name.Span().Start.Line
 	if line >= 0 && line < len(ignoredLines) && ignoredLines[line] {
 		return nil
 	}
-	if _, defined := scopedNameAt(lineScopes, line, name.Name); defined {
+	if _, defined := scopedNameAt(lineScopes, line, name.Span().Start.Character, name.Name); defined {
 		return nil
 	}
 	if isCapitalizedIdentifier(name.Name) && manager.HasSpecName(name.Name) {

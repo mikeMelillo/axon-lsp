@@ -33,3 +33,21 @@ func TestReferenceCharactersMatchHaystackRefIdentifiers(t *testing.T) {
 		}
 	}
 }
+
+func TestTrapKeysAreNotFunctionWords(t *testing.T) {
+	for _, source := range []string{"rec->round", "rec -> /* comment */ round", "rec->siteRef->round"} {
+		for character := len(source) - len("round"); character <= len(source); character++ {
+			if match, ok := WordAt(source, character); ok {
+				t.Errorf("%q: trap key resolved as %#v", source, match)
+			}
+		}
+		for _, match := range AllWords(source) {
+			if match.Word == "round" || match.Word == "siteRef" {
+				t.Errorf("%q: trap key included in references: %#v", source, match)
+			}
+		}
+	}
+	if match, ok := WordAt("rec.round", 5); !ok || match.Word != "round" {
+		t.Fatalf("dot callees must still resolve: %#v %t", match, ok)
+	}
+}

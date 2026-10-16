@@ -20,7 +20,11 @@ func WordAt(line string, character int) (Match, bool) {
 	if start, end, ok := axon.RefLiteralRangeAt(line, character); ok {
 		return Match{Word: line[start:end], Start: start, End: end}, true
 	}
+	tags := trapTagStarts(line)
 	for _, idx := range wordPattern.FindAllStringIndex(line, -1) {
+		if tags[idx[0]] {
+			continue
+		}
 		if idx[0] <= character && character <= idx[1] {
 			return Match{Word: line[idx[0]:idx[1]], Start: idx[0], End: idx[1]}, true
 		}
@@ -46,7 +50,11 @@ func AllWords(line string) []Match {
 			i = end - 1
 		}
 	}
+	tags := trapTagStarts(line)
 	for _, idx := range indices {
+		if tags[idx[0]] {
+			continue
+		}
 		insideReference := false
 		for _, refRange := range refRanges {
 			if idx[0] >= refRange[0] && idx[1] <= refRange[1] {
@@ -61,6 +69,23 @@ func AllWords(line string) []Match {
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Start < result[j].Start })
 	return result
+}
+
+// Trap keys are literal names, not function references. Tokenization avoids
+// confusing arrows inside strings or comments with the trap operator.
+func trapTagStarts(line string) map[int]bool {
+	tags := map[int]bool{}
+	arrow := false
+	for _, token := range axon.Lex(line) {
+		if token.Kind == axon.TokenWhitespace || token.Kind == axon.TokenComment {
+			continue
+		}
+		if arrow && (token.Kind == axon.TokenIdentifier || token.Kind == axon.TokenTypeName) {
+			tags[token.Start] = true
+		}
+		arrow = token.Kind == axon.TokenOperator && token.Text == "->"
+	}
+	return tags
 }
 
 func Location(uri string, line, start, end int) index.Location {

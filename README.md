@@ -1,10 +1,18 @@
 # Axon Language Server (axon-lsp)
 
-> **0.3.5 Update**: The extension has gone through some serious updates from 0.1->0.3, namely a complete rewrite in Golang. The extension no longer has any external dependencies (python, libs, etc.). It has been primarily developed and tested on Linux & Windows, but the binaries are also available for MacOS
+The extension bundles its Go language server; no separate Python or Haxall runtime is required. Binaries are included for Linux, Windows, and macOS.
 
 A VS Code extension that provides Language Server Protocol support for the Axon programming language used in SkySpark and Haxall.
 
-This project is very much a practical tool built in the open. The near-term goal is to make Axon development in VS Code feel lightweight and dependable around the Haxall 3.1.12 era, while laying the groundwork for the 4.x/Xeto shift.
+This project supports legacy Trio/Fantom workflows alongside Haxall 4.x Xeto functions and source archives. Analysis is conservative: unknown types do not produce speculative mismatch warnings, and this is not a full Axon or Xeto compiler.
+
+## 0.4.3 Changes
+
+- Parse `->` as tag lookup, including mixed trap/dot/index chains, without mistaking tag names for function references.
+- Require an existing binding for `=` reassignment; preserve same-line ordering, lexical scope, and conservative typing after mutation.
+- Preserve call context and source positions in Trio and embedded Xeto, with improved recovery around incomplete arrows and multiline Trio `src:` fields.
+
+See [parser notes](docs/plane_notes.md) for validation results and remaining limitations.
 
 ## Features
 
@@ -13,7 +21,8 @@ This project is very much a practical tool built in the open. The near-term goal
 - **Go to Definition**: Navigate to local definitions and known core/external function sources
 - **Signature Help**: See function arguments while typing
 - **References**: Find function usages in the workspace
-- **Diagnostics**: Real-time error detection for undefined functions
+- **Diagnostics**: Undefined functions, unresolved receivers and simple arguments, undefined reassignment targets, missing arguments, and definite argument-type mismatches
+- **Xeto Support**: Embedded Axon analysis, typed function signatures and defaults, and read-only `.xetolib` source navigation
 - **Block Navigation**: Highlight and fold matching `do`/`end`, `defcomp`/`end`, `if`/`else`, and `try`/`catch` pairs
 - **Document Structure**: Function ranges support Outline, Breadcrumbs, and VS Code Sticky Scroll
 
@@ -56,6 +65,7 @@ The extension works out of the box with its bundled function cache and workspace
 Available settings:
 
 - `axonLsp.externalPaths`: additional source directories outside the workspace, including Haxall installations or source checkouts
+- `axonLsp.mode`: function-metadata preference (`auto`, `defs`, or `specs`; default: `auto`)
 - `axonLsp.indexAllWorkspaceFolders`: index every folder in a multi-root VS Code workspace as local Axon sources
 - `axonLsp.ignoreBundledXetoCache`: ignore bundled Xeto function metadata while retaining workspace, external-path, and archive sources, plus the legacy defs cache (default: `false`)
 - `axonLsp.warnMissingArguments`: warn about omitted required arguments (default: `true`); explicit Xeto parameter defaults permit omission without changing the declared nullability
@@ -87,24 +97,39 @@ Workspace and external-path scans read `.xetolib` ZIP archives containing normal
 
 Both `value.func()` and `value.func` are checked as dot calls, with the receiver bound to the first parameter. Undefined receivers are reported even when a function lacks signature metadata; declared values with unknown types are not treated as undefined.
 
+Axon operators have distinct roles:
+
+```axon
+rec: readById(@example)       // : defines a variable
+rec = readById(@replacement) // = reassigns an existing variable
+rec->siteRef->dis            // -> looks up literal tag names (trap)
+rec->curVal.toStr            // . calls a function with an implicit receiver
+```
+
+Trap expressions support chaining, calls, and indexing. An unresolved Axon receiver is reported, but tag names are not variables or function references. Filter paths such as `readAll(siteRef->dis == "HQ")` retain their tag-path meaning. Trap-result types remain unknown; the server does not resolve referenced records or check whether a runtime tag exists.
+
+Reassignment does not define a variable. Definitions and assignments are resolved in source order within lexical function scopes, including same-line statements. Parameters and captured outer bindings may be reassigned; inner definitions do not escape their function. After reassignment, inferred value types are conservatively unknown rather than copied from an outdated initializer.
+
 Xeto parameter types and defaults are indexed separately. For example, `opts: Dict? <axon:"null">` accepts explicit `null` and may be omitted, while `opts: Dict <axon:"null">` has an omission default but is not inferred to accept explicit `null`. Defaults are preserved as Axon source, not evaluated. Nullable parameters without explicit defaults retain the existing omission behavior. Date, Time, DateTime, and DateSpan literals are distinguished from numbers.
 
-Metadata not preserved by older bundled catalogs remains incomplete until those catalogs are regenerated. Structural Xeto conformance and complete position-aware variable type inference remain outside the current diagnostic scope.
+Metadata not preserved by older bundled catalogs remains incomplete until those catalogs are regenerated. Structural Xeto conformance, complete syntax-error reporting, and flow-sensitive variable type inference remain outside the current diagnostic scope. Some recovery and editor paths still use line-oriented scanning.
 
 ## How It Works
 
 Axon LSP currently sources functions from:
 
-- your local working directory
-- the open source Haxall repo cache bundled with the extension
-- known SkySpark/core function metadata captured in the cache (this is a convenience to support some built in @noDoc functions)
+- workspace sources and unsaved edits
+- configured external source directories
+- `.xetolib` archives within those roots
+- bundled legacy defs and Haxall 4.0.6 Xeto metadata, including selected SkySpark/core metadata
 
 The current parser/indexer supports:
 
-- Haxall 3.1.12-oriented workflows today
 - `func` records in `.trio`
 - `@Axon` definitions in `.fan`
 - `defcomp` functions
+- Xeto `Func` signatures, parameter defaults, and embedded Axon bodies
+- Source-backed `.xetolib` archives and Xeto spec names (not full structural conformance)
 
 The extension keeps a compact cached backstop rather than shipping the full Haxall source tree, which keeps installs smaller and startup more predictable.
 
@@ -185,6 +210,8 @@ feature-specific implementation details, start in `internal/lsp/` and follow
 the call into the responsible package.
 
 ### Local Debugging
+
+Run the server checks from `go-server/` with `go test ./...` and `go vet ./...`. From the repository root, `npm run test:client` checks watcher behavior and `npm run compile` checks the TypeScript client.
 
 Press <kbd>F5</kbd>, or pick the `Run Extension` configuration in `.vscode/launch.json`. Its `build-dev` pre-launch task runs two steps in sequence:
 

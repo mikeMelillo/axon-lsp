@@ -699,6 +699,12 @@ func (s *Server) handleSignatureHelp(msg requestMessage) error {
 	if strings.HasSuffix(pathFromURI(params.TextDocument.URI), ".xeto") {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
+	if context, ok := axon.CallAt(line, axon.Position{Character: params.Position.Character}); ok {
+		if help := s.manager.BuildSignatureHelpForURI(context.Name, params.TextDocument.URI); help != nil {
+			help.ActiveParameter = context.ActiveParameter
+			return s.writeResponse(msg.ID, help, nil)
+		}
+	}
 	for _, match := range resolver.AllWords(line) {
 		if match.End <= params.Position.Character {
 			if help := s.manager.BuildSignatureHelpForURI(match.Word, params.TextDocument.URI); help != nil {
@@ -885,6 +891,7 @@ func (s *Server) handleEmbeddedHover(uri string, pos index.Position) (*index.Hov
 			if typeName, source, inferred := s.embeddedLocalType(uri, region, innerPos.Line, match.Word, fn); inferred {
 				return &index.Hover{Contents: index.MarkupContent{Kind: "markdown", Value: fmt.Sprintf("**%s**: `%s`\n\nInferred from %s.", match.Word, typeName, source)}}, true, nil
 			}
+			return &index.Hover{Contents: index.MarkupContent{Kind: "markdown", Value: fmt.Sprintf("**%s**: `unknown`\n\nScoped variable.", match.Word)}}, true, nil
 		}
 	}
 	return s.manager.BuildHoverForURI(match.Word, uri), true, nil
@@ -944,82 +951,26 @@ func embeddedScopeModel(region embeddedRegionView, owner *xeto.ParsedFunction) *
 }
 
 func expressionCallName(expression string) (string, bool) {
-	expression = strings.TrimSpace(expression)
-	var quote byte
-	parenDepth, bracketDepth, braceDepth := 0, 0, 0
-	lastTopLevelDot := -1
-	firstTopLevelOpen := -1
-	for i := 0; i < len(expression); i++ {
-		ch := expression[i]
-		if quote != 0 {
-			if ch == quote && (i == 0 || expression[i-1] != '\\') {
-				quote = 0
-			}
-			continue
-		}
-		if ch == '"' || ch == '\'' || ch == '`' {
-			quote = ch
-			continue
-		}
-		if parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 {
-			if ch == '.' {
-				lastTopLevelDot = i
-			}
-			if ch == '(' && firstTopLevelOpen < 0 {
-				firstTopLevelOpen = i
-			}
-		}
-		switch ch {
-		case '(':
-			parenDepth++
-		case ')':
-			parenDepth--
-		case '[':
-			bracketDepth++
-		case ']':
-			bracketDepth--
-		case '{':
-			braceDepth++
-		case '}':
-			braceDepth--
-		}
-	}
-
-	// Only consider member calls at expression depth zero. Dots inside an
-	// argument or lambda body describe that nested expression, not the result
-	// type of the outer call (for example e.is(...) inside findAll(...)).
-	if lastTopLevelDot >= 0 {
-		start := lastTopLevelDot + 1
-		for start < len(expression) && (expression[start] == ' ' || expression[start] == '\t' || expression[start] == '\r' || expression[start] == '\n') {
-			start++
-		}
-		end := start
-		for end < len(expression) && isIdentifierChar(expression[end]) {
-			end++
-		}
-		name := expression[start:end]
-		if isIdentifier(name) {
-			return name, true
-		}
-	}
-	if firstTopLevelOpen < 0 {
+	parsed := axon.Parse(expression)
+	if len(parsed.Errors) != 0 || len(parsed.Expressions) != 1 {
 		return "", false
 	}
-	nameEnd := firstTopLevelOpen
-	nameStart := nameEnd
-	for nameStart > 0 && isIdentifierChar(expression[nameStart-1]) {
-		nameStart--
+	node := parsed.Expressions[0]
+	for group, ok := node.(*axon.GroupExpr); ok; group, ok = node.(*axon.GroupExpr) {
+		node = group.Expression
 	}
-	if nameStart == nameEnd {
-		return "", false
+	if call, ok := node.(*axon.CallExpr); ok {
+		switch callee := call.Callee.(type) {
+		case *axon.NameExpr:
+			return callee.Name, true
+		case *axon.MemberExpr:
+			return callee.Name, true
+		}
 	}
-	// Do not mistake an inner call in an operator expression for the type of
-	// the entire expression.
-	if strings.TrimSpace(expression[:nameStart]) != "" {
-		return "", false
+	if member, ok := node.(*axon.MemberExpr); ok {
+		return member.Name, true
 	}
-	name := expression[nameStart:nameEnd]
-	return name, isIdentifier(name)
+	return "", false
 }
 
 func isIdentifier(value string) bool {
@@ -1080,6 +1031,8 @@ func literalTypeAt(expression axon.Expr, character int) (string, bool) {
 		}
 		return literalTypeAt(value.Right, character)
 	case *axon.MemberExpr:
+		return literalTypeAt(value.Receiver, character)
+	case *axon.TrapExpr:
 		return literalTypeAt(value.Receiver, character)
 	case *axon.CallExpr:
 		if typeName, ok := literalTypeAt(value.Callee, character); ok {

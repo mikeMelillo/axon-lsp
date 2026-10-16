@@ -495,13 +495,21 @@ func TestCallAtPositionTracksActiveArgument(t *testing.T) {
 	}
 }
 
-func TestAxonReferenceLiteralHasRefHoverType(t *testing.T) {
+func TestLiteralInferenceAndHoverTypes(t *testing.T) {
 	t.Parallel()
-	if got, ok := literalAt(`@lib::someRef`, 7); !ok || got != "Ref" {
-		t.Fatalf("expected reference literal hover type Ref, got %q ok=%t", got, ok)
-	}
-	if got, ok := literalType(`@lib::someRef`); !ok || got != "Ref" {
-		t.Fatalf("expected reference expression type Ref, got %q ok=%t", got, ok)
+	for source, want := range map[string]string{
+		"@lib::someRef": "Ref", "2026-01-01": "Date", "12:30:00": "Time",
+		"2026-01-01T12:30:00Z": "DateTime", "42": "Number",
+		"null": "null", "`/path`": "Uri", "true": "Bool",
+	} {
+		t.Run(source, func(t *testing.T) {
+			if got, ok := literalType(source); !ok || got != want {
+				t.Errorf("literalType = %q, %t; want %q", got, ok, want)
+			}
+			if got, ok := literalAt(source, len(source)/2); !ok || got != want {
+				t.Errorf("literalAt = %q, %t; want %q", got, ok, want)
+			}
+		})
 	}
 }
 

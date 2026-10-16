@@ -5,7 +5,7 @@
 ### Completed
 
 - Go-based language server bundled directly in the VSIX
-- No external Python runtime requirement, it was nice for a POC but will end up a long term PITA
+- No external Python runtime requirement
 - Basic autocomplete for Axon functions
 - Hover information
 - Go to definition with local/core/external support
@@ -19,6 +19,8 @@
 - Current-file and editable-source precedence over archived metadata
 - Optional bundled Xeto metadata, with legacy defs retained
 - Dot-call receiver validation and explicit Xeto parameter-default metadata
+- Source-spanned trap (`->`) expressions, tag-path handling, and mixed call/index chains
+- Position-aware definition/reassignment diagnostics and conservative mutation typing
 
 ### Phase B - Legacy Support Polish
 
@@ -26,32 +28,41 @@
 - Improve hover and definition ergonomics
 - Improve workspace indexing and multi-directory support
 - Continue tightening parser and diagnostic edge cases
+- Expand syntax recovery/reporting without speculative diagnostics on partial code
 
-### Phase C - 4.x / Xeto Preparation
+### Phase C - Richer Xeto Intelligence
 
 - Prepare for the migration away from `defcomp`
 - Introduce spec-oriented symbol and type modeling
-- Support Xeto-backed workflows and richer type metadata
-- Adapt indexing around the upcoming 4.x architecture
+- Extend existing Xeto workflows with richer type metadata and structural conformance
+- Add library dependency/version selection beyond source-root archive precedence
+- Add flow-sensitive variable inference; trap results currently remain unknown
 - See `docs/type-intelligence.md` for the active type-intelligence plan.
 
 ## Architecture Notes
 
-### Current (Haxall 3.1.12)
+### Current (Legacy and Haxall 4.x Sources)
 
 - Indexes `.fan` files with `@Axon` annotations
 - Indexes `.trio` files with `func` records
+- Indexes Xeto functions/spec names and in-memory `.xetolib` source documents
+- Parses embedded Axon expressions and lexical bindings for conservative diagnostics
 - Provides a cached core-function backstop
 - Uses a VS Code TypeScript client with a bundled Go server over stdio
 
-### Future (Haxall 4.x)
+### Further Work
 
-- Architecture changes are expected to be substantial
 - Expand the existing Xeto name/function index into richer spec and library dependency modeling
 - Type-aware editor features will likely move beyond function-only metadata
 
 ## Recent Notes
 
+- 0.4.3
+    - Add trap-operator AST support and tag-safe hover, definition, and reference lookup
+    - Separate variable definitions from reassignment with position-aware lexical binding resolution
+    - Preserve signature help around trap arguments and recover following statements after incomplete input
+    - Consolidate overlapping diagnostic tests and refresh documentation
+    - Automated checks and user-reported manual VS Code smoke testing passed
 - 0.2.x
     - Replace the Python server with a bundled Go server
     - Cross-compile extension binaries for the 6 supported desktop targets
