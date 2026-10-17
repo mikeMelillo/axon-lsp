@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/typeinfo"
 )
 
 func TestDefaultSourcesSurviveCacheRoundTrip(t *testing.T) {
@@ -133,7 +135,7 @@ func TestEmbeddedBaselineIntegrity(t *testing.T) {
 	if manifest.SchemaVersion != 1 || len(manifest.Sources) != 4 {
 		t.Fatalf("missing baseline provenance: %#v", manifest)
 	}
-	for name, data := range map[string][]byte{"function_cache.json": EmbeddedFunctionCache, "coreFuncs.trio": EmbeddedCoreFuncs, "xeto_sources.json": EmbeddedXetoSources} {
+	for name, data := range map[string][]byte{"function_cache.json": EmbeddedFunctionCache, "coreFuncs.trio": EmbeddedCoreFuncs, "xeto_sources.json": EmbeddedXetoSources, "type_catalog.json": EmbeddedTypeCatalog} {
 		if got := fmt.Sprintf("%x", sha256.Sum256(data)); manifest.Artifacts[name] != got {
 			t.Errorf("asset %s does not match its baseline checksum", name)
 		}
@@ -195,5 +197,51 @@ func TestEmbeddedFunctionLocationsArePortable(t *testing.T) {
 	}
 	if !foundWebSource {
 		t.Fatal("expected a portable web source location")
+	}
+}
+
+func TestEmbeddedNominalCatalogHasProvenanceAndServedSources(t *testing.T) {
+	libraries, err := LoadEmbeddedTypes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundSystem := false
+	for _, lib := range libraries {
+		if len(lib.Revision) != 40 || lib.Version == "" || filepath.IsAbs(lib.Provider) || strings.HasPrefix(lib.Provider, "haxall31/") {
+			t.Errorf("missing/legacy/nonportable nominal provenance: %#v", lib)
+		}
+		for _, doc := range lib.Documents {
+			if _, ok := XetoSource(doc.URI); !ok {
+				t.Errorf("unserved nominal source: %s", doc.URI)
+			}
+		}
+		if lib.Name == "sys" {
+			foundSystem = true
+			if lib.Provider != "xeto/sys" || lib.Revision != "deb813507b8255d2159db81c5caf9b0ef0ad102e" {
+				t.Fatal("system graph lost its pinned independent source")
+			}
+			want := map[string]string{"Int": "Number", "Number": "Scalar", "Scalar": "Obj", "Entity": "Dict", "Dict": "Collection", "Collection": "Obj"}
+			for _, doc := range lib.Documents {
+				for _, typ := range doc.Types {
+					if base, ok := want[typ.Name]; ok {
+						if !typ.Complete || !doc.Complete || typ.Base != base {
+							t.Errorf("lost declared system edge: %#v", typ)
+						}
+						delete(want, typ.Name)
+					}
+				}
+			}
+			if len(want) != 0 {
+				t.Errorf("missing system ancestry: %#v", want)
+			}
+		}
+	}
+	if !foundSystem {
+		t.Fatal("missing generated system graph")
+	}
+	// This is a versioned additive asset, not a function-cache format migration.
+	var bundle typeinfo.Bundle
+	if err := json.Unmarshal(EmbeddedTypeCatalog, &bundle); err != nil || bundle.SchemaVersion != 1 {
+		t.Fatalf("missing type-catalog schema version: %v", err)
 	}
 }

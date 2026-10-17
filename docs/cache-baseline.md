@@ -80,9 +80,13 @@ Files live in `go-server/internal/cache/assets/`:
   `axon-ext:/xeto/5.0.0/sys/types.xeto` and
   `axon-ext:/haxall/4.0.6/axon/funcs.xeto`.
 - `coreFuncs.trio`: the curated legacy source backstop.
+- `type_catalog.json`: additive schema-versioned nominal library/type catalog,
+  with simple declared bases, completeness flags, declaring document URIs, and
+  provider/version/revision provenance. It is generated only from the modern
+  Haxall and independent Xeto inputs, not the legacy Haxall 3.x graph.
 - `cache_manifest.json`: schema version, source commits/versions, library
   inventory, per-source literal build properties, and SHA-256 checksums for the
-  three content assets. Also served at `axon-ext:/cache_manifest.json`.
+  four content assets. Also served at `axon-ext:/cache_manifest.json`.
 
 Build properties are preserved as text and literal key/value metadata; the
 generator does not execute or fully interpret `BuildVar` expressions. Haxall's
@@ -95,9 +99,11 @@ sources. License/copyright notices in source text are retained; see
 This is a reproducible **editor source/metadata baseline**, not a claim that a
 complete Haxall runtime was compiled or that every Xeto dependency, constraint,
 or version combination was checked. Source presence and provenance are verified;
-the inheritance engine, qualified namespace resolution, and structural checks
-remain separate work. Raw standard-library definitions are now available for
-that work, but recaching alone does not make type inheritance affect hints.
+the [T0 nominal query](type-intelligence.md#nominal-compatibility-t0) consumes the
+generated declared-base catalog, while strict versioned namespace resolution,
+effective slots, and structural checks remain separate work. Recaching now
+updates nominal metadata as well as function/source assets; it does not compile
+or structurally validate the libraries.
 
 A source-level sanity check of the pinned modern Haxall/Xeto pair found no
 missing explicitly named manifest dependencies, unresolved manifest `BuildVar`

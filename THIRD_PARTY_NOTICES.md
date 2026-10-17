@@ -1,8 +1,8 @@
 # Third-Party Source and Catalog Notices
 
 Axon LSP includes Haxall and Project Haystack Xeto source documents and
-generated function catalogs derived from those projects. These upstream works
-are licensed under the **Academic Free License 3.0 (AFL-3.0)**, separately from
+generated function and nominal type catalogs derived from those projects. These
+upstream works are licensed under the **Academic Free License 3.0 (AFL-3.0)**, separately from
 the license for Axon LSP's own code.
 
 Upstream source text, copyright notices, and license texts are retained verbatim

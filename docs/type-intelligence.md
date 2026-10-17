@@ -1,8 +1,8 @@
 # Current Analysis and Type Behavior
 
-This is a reference for the 0.4.3 implementation (`e814e54`), including known
-limitations. It is not an implementation plan or a complete Axon/Xeto language
-specification. Future work and review decisions live in the
+This is a reference for the 0.4.3 implementation plus the cache/T0 nominal
+inheritance work, including known limitations. It is not an implementation plan
+or a complete Axon/Xeto language specification. Future work and review decisions live in the
 [planning index](plans/README.md).
 
 ## Sources and metadata
@@ -15,8 +15,8 @@ specification. Future work and review decisions live in the
   `b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f`.
 - The [cache baseline](cache-baseline.md) now also includes the separate Project
   Haystack Xeto 5.0.0 standard-library sources, build properties, and provenance.
-  This fills the missing `sys`/`ph` source inputs; it does not implement a base-type
-  graph or change inheritance-based compatibility yet.
+  Its additive `type_catalog.json` supplies the declared nominal base graph;
+  legacy Haxall 3.x metadata is not mixed into that graph.
 - Xeto requests prefer modern bundled signatures; other selection paths follow
   the configured metadata mode. Excluding bundled Xeto metadata retains legacy
   defs and indexed workspace/external/archive sources.
@@ -24,9 +24,9 @@ specification. Future work and review decisions live in the
   and entry, not a hash of changing file contents. Replacement/deletion and
   directory reconciliation refresh indexed sources; recovery remains bounded
   and depends on VS Code watcher delivery.
-- The index stores function signatures and coarse Xeto spec names, not a
-  qualified library/version namespace or structural slot graph. Older bundled
-  catalogs may lack default metadata until regenerated.
+- The index stores function signatures, coarse spec names, and a separate
+  qualified nominal catalog. It is not a strict versioned namespace or structural
+  slot graph. Older bundled catalogs may lack default metadata until regenerated.
 
 ## Expressions, bindings, and diagnostics
 
@@ -38,9 +38,9 @@ same interpretation or source mapping yet.
   dates, times, datetimes, date spans, `null`, lists, and dicts. Diagnostics use
   `None` internally for null; hover displays `null`.
 - Embedded Xeto hover can use owner parameter types, local initializers, and
-  indexed function-return signatures. Argument diagnostics use literal and
-  available function-return types, but do not share a complete local-variable
-  type evaluator with hover/completion.
+  indexed function-return signatures. Argument diagnostics use literal,
+  function-return, and declared owner-input types, but do not share a complete
+  local-variable type evaluator with hover/completion.
 - Both `value.func()` and `value.func` are checked as dot calls with an implicit
   first argument. Unresolved simple receivers/arguments, undefined functions,
   undefined assignment targets, missing required arguments, and primitive
@@ -74,13 +74,49 @@ parameter labels are still reconstructed from display strings.
 
 Embedded Xeto hover recognizes literals, scoped parameters, selected local
 initializers, and indexed function returns, including outer dotted chains.
-Completion uses available type strings to prioritize function candidates and
-add typed variable candidates without hiding unknown function candidates.
-These are heuristic paths, not a single position-aware semantic service.
+Completion in embedded Xeto uses the shared nominal relation to rank receivers
+against first parameters, and function returns/scoped variables against active
+argument types. It keeps unknown function candidates visible. Variable candidates
+use exact cursor visibility and existing conservative mutation invalidation.
+These are bounded inference paths, not a complete shared flow-sensitive service.
 
 Definitions and function references primarily use the selected function index.
 Lexical callable shadowing, local navigation, reference identity, and scope/type
 queries are not uniformly shared across features.
+
+## Nominal compatibility (T0)
+
+`internal/typeinfo` resolves simple names in their declaring source context and
+compares qualified, provider-specific identities. It follows declared base chains,
+including `Int → Number → Scalar → Obj` and
+`Entity → Dict → Collection → Obj`. Parameter and return type spellings do not
+lose their source context; unrelated libraries' same-spelled types are distinct.
+Axon's date-span literal category maps to the catalog's `sys::Span` identity.
+
+Library selection uses coherent providers, not per-type fallback: workspace
+editable trees, workspace archives, configured external roots in order (editable
+before archive within a root), then the modern bundle. A library is identified
+by its source directory with `lib.xeto`; loose files share an anonymous directory
+scope. Root-level archives without a named library directory also remain
+anonymous; filenames/URI hashes are not library identities. Imports include
+`sys` and literal manifest dependency names. This is editor
+precedence, **not dependency/version solving**. A lower-priority signature cannot
+resurrect a superseded library's graph.
+
+The directional result is compatible, definitely incompatible, or unknown.
+Missing/ambiguous metadata, duplicate declarations, cycles, unsupported compound
+headers, and incomplete/over-budget ancestry remain unknown. Failure to inherit
+does not prove failure to fit structurally; custom specs do not gain blanket
+mismatch warnings. Definite intrinsic category mismatches and null supplied to a
+resolved non-null contract still warn. Nullable values/default omission retain
+their previous rules, including the `Obj` special
+case; numeric subtype/unit/range constraints are not inferred from literals.
+
+Catalog snapshots refresh with source/manifest edits, removal, archive rebuilds,
+root changes, and settings. `ignoreBundledXetoCache` excludes bundled ancestry as
+well as bundled function variants, without suppressing indexed sources or
+intrinsic primitive checks. Traversal is capped at 128 nodes; initializer
+inference at 32 recursive steps. No runtime, downloads, or Haxall execution occurs.
 
 ## Known limitations
 
@@ -90,7 +126,7 @@ code evidence are in the [foundation analysis](plans/analysis-foundation.md#2-ev
 | Area | Current limitation |
 | --- | --- |
 | Resolution | Whitespace before call parentheses can change undefined-function reporting; local callables can incorrectly inherit global signatures |
-| Scope/recovery | Unrelated parse errors can re-enable leaking heuristic parameter ranges; completion can offer out-of-scope locals; catch regexes can match strings |
+| Scope/recovery | Unrelated parse errors can re-enable leaking heuristic parameter ranges; catch regexes can match strings; not all features use exact-position binding queries |
 | Mapping | Some consumers still mix byte columns with UTF-16 positions; embedded function references can retain body-relative rather than host line numbers |
 | Lexical/grammar coverage | Multiline string contents can be scanned as code; defaulted/general trailing lambdas, partial application, dict shorthand, and try/catch are incompletely modeled |
 | Filters/catch semantics | Filter exemptions can suppress checks on evaluated comparison values; catch binding lifetime and some compatibility forms differ from the pinned runtime |
@@ -113,3 +149,13 @@ distinct assertions.
 
 Passing checks validate the covered cases, not complete language support or
 agreement between every analysis path. The known gaps above remain present.
+
+## T0 validation record (2026-10-17)
+
+The nominal milestone passed Go tests (including the full race suite), `go vet`,
+client tests, TypeScript compilation, cache regeneration/read-only verification,
+all six server cross-builds, and whitespace checks. Focused coverage includes
+graph direction, ambiguity/missing/cyclic/incomplete metadata, traversal limits,
+qualified return provenance, typed inputs, cursor-aware completion ranking,
+provider replacement/removal, and live bundled-cache exclusion. No new manual
+VS Code smoke test is claimed.

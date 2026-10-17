@@ -10,6 +10,7 @@ import (
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/parser"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/resolver"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/scope"
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/typeinfo"
 )
 
 var keywords = map[string]struct{}{
@@ -33,10 +34,18 @@ func ValidateRegionWithMissingArgumentWarnings(uri string, source string, manage
 }
 
 func ValidateRegionWithScope(uri string, source string, manager *index.Manager, clearReferences, warnMissingArguments bool, scopedVariables []string) []index.Diagnostic {
-	return validate(uri, source, manager, clearReferences, warnMissingArguments, scopedVariables)
+	parameters := make(map[string]string, len(scopedVariables))
+	for _, name := range scopedVariables {
+		parameters[name] = ""
+	}
+	return ValidateRegionWithTypes(uri, source, manager, clearReferences, warnMissingArguments, parameters)
 }
 
-func validate(uri string, source string, manager *index.Manager, clearReferences, warnMissingArguments bool, scopedVariables []string) []index.Diagnostic {
+func ValidateRegionWithTypes(uri string, source string, manager *index.Manager, clearReferences, warnMissingArguments bool, parameters map[string]string) []index.Diagnostic {
+	return validate(uri, source, manager, clearReferences, warnMissingArguments, parameters)
+}
+
+func validate(uri string, source string, manager *index.Manager, clearReferences, warnMissingArguments bool, parameters map[string]string) []index.Diagnostic {
 	if clearReferences {
 		manager.ClearReferencesForURI(uri)
 	}
@@ -48,10 +57,6 @@ func validate(uri string, source string, manager *index.Manager, clearReferences
 	// ranges must not override lexical scopes established by a complete AST.
 	if len(parsed.Errors) == 0 {
 		paramScopes = nil
-	}
-	parameters := make(map[string]string, len(scopedVariables))
-	for _, name := range scopedVariables {
-		parameters[name] = ""
 	}
 	bindings := scope.Analyze(masked.Text, parameters)
 	lines := strings.Split(masked.Text, "\n")
@@ -123,7 +128,10 @@ func validateCallsFromAST(uri, source string, expression axon.Expr, manager *ind
 			}
 			call = &axon.CallExpr{Callee: member}
 		}
-		name, _, _, ok := callTarget(call.Callee)
+		name, span, _, ok := callTarget(call.Callee)
+		if _, shadowed := scopedNameAt(lineScopes, span.Start.Line, span.Start.Character, name); shadowed {
+			return // A lexical callable does not inherit a global Filter contract.
+		}
 		fn, found := manager.FindFunctionForURI(name, uri)
 		if !ok || !found {
 			return
@@ -178,6 +186,10 @@ func validateCallsFromAST(uri, source string, expression axon.Expr, manager *ind
 			return
 		}
 		fn, found := manager.FindFunctionForURI(name, uri)
+		_, shadowed := scopedNameAt(lineScopes, calleeLine, nameSpan.Start.Character, name)
+		if shadowed {
+			found = false
+		}
 		args := call.Arguments
 		_, dotCall := call.Callee.(*axon.MemberExpr)
 		if receiver, ok := call.Callee.(*axon.MemberExpr); ok {
@@ -189,6 +201,9 @@ func validateCallsFromAST(uri, source string, expression axon.Expr, manager *ind
 			if nameExpr, ok := receiverExpr.(*axon.NameExpr); ok && !(found && isFilterArgument(fn, 0)) {
 				result = append(result, undefinedArgumentIdentifier(uri, nameExpr, manager, localFuncs, lineScopes, ignoredLines)...)
 			}
+		}
+		if shadowed {
+			return // Its callable signature is unknown; do not borrow the global one.
 		}
 		if !found {
 			if dotCall {
@@ -221,7 +236,7 @@ func validateCallsFromAST(uri, source string, expression axon.Expr, manager *ind
 			if _, isLambda := arg.(*axon.LambdaExpr); isLambda {
 				continue
 			}
-			actual, hasActualType := argumentExprType(uri, source, arg, manager)
+			actual, hasActualType := argumentExprType(uri, source, arg, manager, lineScopes)
 			if !hasActualType {
 				if isFilterArgument(fn, paramIndex) {
 					// Filter expressions use bare tag names as syntax, rather than
@@ -238,17 +253,12 @@ func validateCallsFromAST(uri, source string, expression axon.Expr, manager *ind
 				continue
 			}
 			expected := fn.ParamTypes[fn.Params[paramIndex]]
-			expected, optional := optionalType(expected)
-			actualType, actualOptional := optionalType(actual)
-			// A nullable return is not a definite null or incompatible value.
-			if actualOptional && !optional {
+			if manager.TypeRelation(actual, fn.TypeRef(expected)) != typeinfo.Incompatible {
 				continue
 			}
-			if expected == "" || expected == "Obj" || (actual == "None" && optional) || primitiveCompatible(actualType, expected) {
-				continue
-			}
+			expected, _ = optionalType(expected)
 			span := arg.Span()
-			result = append(result, index.Diagnostic{Range: index.Range{Start: toIndexPosition(span.Start), End: toIndexPosition(span.End)}, Message: "Argument " + fn.Params[paramIndex] + " expects " + expected + "; received " + actual, Severity: 2})
+			result = append(result, index.Diagnostic{Range: index.Range{Start: toIndexPosition(span.Start), End: toIndexPosition(span.End)}, Message: "Argument " + fn.Params[paramIndex] + " expects " + expected + "; received " + strings.TrimPrefix(actual.Name, "sys::"), Severity: 2})
 		}
 	})
 	return result
@@ -282,40 +292,51 @@ func toIndexPosition(position axon.Position) index.Position {
 	return index.Position{Line: position.Line, Character: position.Character}
 }
 
-func argumentExprType(uri, source string, expression axon.Expr, manager *index.Manager) (string, bool) {
+func argumentExprType(uri, source string, expression axon.Expr, manager *index.Manager, scopes *validationScopes) (typeinfo.Ref, bool) {
 	switch value := expression.(type) {
 	case *axon.GroupExpr:
-		return argumentExprType(uri, source, value.Expression, manager)
+		return argumentExprType(uri, source, value.Expression, manager, scopes)
 	case *axon.ListExpr:
-		return "List", true
+		return typeinfo.Builtin("List"), true
 	case *axon.MapExpr:
-		return "Dict", true
+		return typeinfo.Builtin("Dict"), true
 	case *axon.LiteralExpr:
-		return axon.LiteralType(value)
+		name, known := axon.LiteralType(value)
+		return typeinfo.Builtin(name), known
+	case *axon.NameExpr:
+		pos := value.Span().Start
+		if binding, found := scopes.bindings.ResolveAt(value.Name, pos.Line, pos.Character); found && binding.Type != "" {
+			return typeinfo.Ref{Name: binding.Type, URI: uri}, true
+		}
+		return typeinfo.Ref{}, false
 	case *axon.UnaryExpr:
 		if value.Operator == "+" || value.Operator == "-" {
-			if actual, known := argumentExprType(uri, source, value.Operand, manager); known && actual == "Number" {
-				return "Number", true
+			if actual, known := argumentExprType(uri, source, value.Operand, manager, scopes); known && actual.Name == "sys::Number" {
+				return actual, true
 			}
 		}
-		return "", false
+		return typeinfo.Ref{}, false
 	case *axon.MemberExpr, *axon.CallExpr:
 		callee := expression
 		if call, ok := expression.(*axon.CallExpr); ok {
 			callee = call.Callee
 		}
-		if name, _, _, ok := callTarget(callee); ok {
+		if name, span, _, ok := callTarget(callee); ok {
+			if _, shadowed := scopedNameAt(scopes, span.Start.Line, span.Start.Character, name); shadowed {
+				return typeinfo.Ref{}, false
+			}
 			if fn, found := manager.FindFunctionForURI(name, uri); found && fn.ReturnType != "" {
-				return fn.ReturnType, true
+				return fn.TypeRef(fn.ReturnType), true
 			}
 		}
-		return "", false
+		return typeinfo.Ref{}, false
 	default:
 		span := expression.Span()
 		if span.StartOffset < 0 || span.EndOffset > len(source) || span.EndOffset < span.StartOffset {
-			return "", false
+			return typeinfo.Ref{}, false
 		}
-		return primitiveArgumentType(source[span.StartOffset:span.EndOffset])
+		name, known := primitiveArgumentType(source[span.StartOffset:span.EndOffset])
+		return typeinfo.Builtin(name), known
 	}
 }
 
@@ -417,16 +438,6 @@ func primitiveArgumentType(value string) (string, bool) {
 		}
 	}
 	return "Number", value != ""
-}
-
-func primitiveCompatible(actual, expected string) bool {
-	if actual == expected {
-		return true
-	}
-	if expected == "Number" && (actual == "Int" || actual == "Float") {
-		return true
-	}
-	return false
 }
 
 func startsWithAny(input string, prefixes []string) bool {

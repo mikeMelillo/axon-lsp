@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/typeinfo"
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/xeto"
 )
 
 type baselineSource struct {
@@ -106,10 +109,15 @@ func buildCache(root string, check bool) error {
 	if err != nil {
 		return err
 	}
+	typeData, err := json.MarshalIndent(typeinfo.Bundle{SchemaVersion: 1, Libraries: nominalLibraries(sources, xetoSources)}, "", "  ")
+	if err != nil {
+		return err
+	}
 	assets := map[string][]byte{
 		"function_cache.json": append(functionData, '\n'),
 		"coreFuncs.trio":      coreData,
 		"xeto_sources.json":   append(xetoData, '\n'),
+		"type_catalog.json":   append(typeData, '\n'),
 	}
 	for name, data := range assets {
 		manifest.Artifacts[name] = digest(data)
@@ -122,7 +130,7 @@ func buildCache(root string, check bool) error {
 	assetDir := filepath.Join(repoRoot, "go-server", "internal", "cache", "assets")
 	// All inputs are read and validated before the first output is touched. Write
 	// the checksum manifest last so it describes a completed asset set.
-	for _, name := range []string{"function_cache.json", "coreFuncs.trio", "xeto_sources.json", "cache_manifest.json"} {
+	for _, name := range []string{"function_cache.json", "coreFuncs.trio", "xeto_sources.json", "type_catalog.json", "cache_manifest.json"} {
 		path := filepath.Join(assetDir, name)
 		if check {
 			current, err := os.ReadFile(path)
@@ -143,6 +151,39 @@ func buildCache(root string, check bool) error {
 	}
 	fmt.Printf("%s %d variants across %d function names and %d source/metadata documents from %d locked inputs\n", action, count, len(functions), len(xetoSources), len(sources))
 	return nil
+}
+
+func nominalLibraries(sources []sourceDescriptor, texts map[string]string) []typeinfo.Library {
+	var libraries []typeinfo.Library
+	for _, source := range sources {
+		if source.Model != "specs" {
+			continue // Do not mix the legacy Haxall graph into the modern baseline.
+		}
+		byName := map[string][]string{}
+		for asset := range texts {
+			rel, found := strings.CutPrefix(asset, source.AssetPrefix+"/")
+			if !found || !strings.HasSuffix(rel, ".xeto") || !strings.Contains(rel, "/") {
+				continue
+			}
+			name, _, _ := strings.Cut(rel, "/")
+			byName[name] = append(byName[name], asset)
+		}
+		names := make([]string, 0, len(byName))
+		for name := range byName {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			lib := typeinfo.Library{Name: name, Provider: source.ID + "/" + name, Version: source.Version, Revision: source.Revision}
+			sort.Strings(byName[name])
+			for _, asset := range byName[name] {
+				uri := (&url.URL{Scheme: "axon-ext", OmitHost: true, Path: "/" + asset}).String()
+				lib.Documents = append(lib.Documents, xeto.ParseNominalDocument(uri, texts[asset]))
+			}
+			libraries = append(libraries, lib)
+		}
+	}
+	return libraries
 }
 
 func digest(data []byte) string { return fmt.Sprintf("%x", sha256.Sum256(data)) }

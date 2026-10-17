@@ -26,6 +26,8 @@ behavior and known limitations are documented in the
 - Dot-call receiver validation and explicit Xeto parameter-default metadata
 - Source-spanned trap (`->`) expressions, tag-path handling, and mixed call/index chains
 - Position-aware definition/reassignment diagnostics and conservative mutation typing
+- Declared nominal ancestry for embedded Xeto hints and conservative argument checks,
+  with a pinned qualified type catalog (structural fitting remains deferred)
 
 ### Direction
 

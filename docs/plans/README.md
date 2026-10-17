@@ -8,21 +8,28 @@ are separate proposals for Haxall/Xeto, not local implementation commitments.
 
 ## Active review plans
 
-Baseline: `e814e54` (0.4.3). These plans are **drafts for review**, not approved
-release scopes or claims that the proposed features already exist.
+Baseline: 0.4.3 plus the pinned cache baseline (`2fc9630`). **T0 is implemented
+in the current working changes.** F1–F3 and T1–T3 remain drafts for review, not
+approved release scopes or claims that those proposed features already exist.
 
 | ID | Change path | Detailed plan |
 | --- | --- | --- |
 | F1 | Regression corpus and error-tolerant parsing | [Analysis foundation](analysis-foundation.md) |
 | F2 | Shared, position-aware resolution across editor features | [Analysis foundation](analysis-foundation.md) |
 | F3 | Narrow, confidence-gated syntax diagnostics | [Analysis foundation](analysis-foundation.md) |
+| T0 | Early declared nominal inheritance (implemented) | [Type-model evolution](type-model-evolution.md#3a-t0-early-declared-nominal-inheritance) |
 | T1 | Flow-sensitive reassignment inference | [Type-model evolution](type-model-evolution.md) |
 | T2 | Static trap-result typing | [Type-model evolution](type-model-evolution.md) |
 | T3 | Structural conformance and library/version modeling | [Type-model evolution](type-model-evolution.md) |
 
 ### Recommended order
 
-Start with source-region/coordinate correctness and consistent name resolution,
+T0 was prioritized ahead of the broader foundation/type projects. It supplies
+qualified nominal identities and positive ancestry queries without waiting for
+flow analysis, effective slots, structural fitting, or version solving. Do not
+make those projects prerequisites for using the declared base chain.
+
+Continue with source-region/coordinate correctness and consistent name resolution,
 with focused parser regressions. Do not publish the current parser error list
 wholesale. The foundation plan owns the delivery slices, compatibility
 decisions, and diagnostic rollout gates.

@@ -183,9 +183,13 @@ func (m *Model) Resolve(name string, line int) (Binding, bool) {
 }
 
 func (m *Model) NamesAt(line int) map[string]struct{} {
+	return m.NamesAtPosition(line, m.lineEnd(line))
+}
+
+func (m *Model) NamesAtPosition(line, character int) map[string]struct{} {
 	result := map[string]struct{}{}
 	for _, binding := range m.bindings {
-		if _, ok := m.Resolve(binding.Name, line); ok {
+		if _, ok := m.ResolveAt(binding.Name, line, character); ok {
 			result[binding.Name] = struct{}{}
 		}
 	}

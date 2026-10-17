@@ -179,14 +179,15 @@ func TestTemporalArgumentDiagnostics(t *testing.T) {
   date: Func { value: Date }
   time: Func { value: Time }
   dateTime: Func { value: DateTime }
+  span: Func { value: Span }
   number: Func { value: Number }
 }`)
-	for _, source := range []string{"date(2026-01-01)", "time(12:34:56.7)", "dateTime(2026-01-01T12:34:56Z)", "dateTime(2026-01-01T12:34:56.789-05:00 New_York)", "number(1.2e-3)", "number(5min)", "number(-1.2e-3)", "number(+5min)"} {
+	for _, source := range []string{"date(2026-01-01)", "time(12:34:56.7)", "dateTime(2026-01-01T12:34:56Z)", "dateTime(2026-01-01T12:34:56.789-05:00 New_York)", "span(2026-01)", "number(1.2e-3)", "number(5min)", "number(-1.2e-3)", "number(+5min)"} {
 		if diagnostics := Validate("file:///test.xeto", source, mgr); len(diagnostics) != 0 {
 			t.Errorf("valid temporal/numeric literal: %q: %#v", source, diagnostics)
 		}
 	}
-	for _, test := range []struct{ source, actual string }{{"number(2026-01-01)", "Date"}, {"number(12:34:56)", "Time"}, {"number(2026-01-01T12:34:56Z)", "DateTime"}} {
+	for _, test := range []struct{ source, actual string }{{"number(2026-01-01)", "Date"}, {"number(2026-01)", "DateSpan"}, {"number(12:34:56)", "Time"}, {"number(2026-01-01T12:34:56Z)", "DateTime"}} {
 		if diagnostics := Validate("file:///test.xeto", test.source, mgr); len(diagnostics) != 1 || diagnostics[0].Message != "Argument value expects Number; received "+test.actual {
 			t.Errorf("temporal literal is not Number: %q: %#v", test.source, diagnostics)
 		}

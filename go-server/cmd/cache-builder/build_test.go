@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/typeinfo"
 )
 
 func TestCacheGenerationPinsAndReproducibility(t *testing.T) {
@@ -89,6 +91,14 @@ func TestCacheGenerationPinsAndReproducibility(t *testing.T) {
 		return out
 	}
 	before := snapshot()
+	var catalog typeinfo.Bundle
+	if err := json.Unmarshal([]byte(before["type_catalog.json"]), &catalog); err != nil || catalog.SchemaVersion != 1 || len(catalog.Libraries) != 1 {
+		t.Fatalf("missing deterministic nominal metadata: %v; %#v", err, catalog)
+	}
+	lib := catalog.Libraries[0]
+	if lib.Name != "sys" || lib.Provider != "standard/sys" || lib.Revision != pins[1].Revision {
+		t.Fatalf("nominal library provenance changed: %#v", lib)
+	}
 	if err := buildCache(root, false); err != nil || !reflect.DeepEqual(before, snapshot()) {
 		t.Fatalf("regeneration must be byte-for-byte deterministic: %v", err)
 	}

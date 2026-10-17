@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf16"
 
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/axon"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/cache"
@@ -24,6 +25,7 @@ import (
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/resolver"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/scope"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/trio"
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/typeinfo"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/xeto"
 )
 
@@ -289,14 +291,32 @@ func (s *Server) handle(msg requestMessage) error {
 				completions := s.manager.GetCompletionsForURI(params.TextDocument.URI)
 				if expected, ok := s.expectedCompletionType(params.TextDocument.URI, region, inner, fn); ok {
 					for i := range completions.Items {
-						if symbol, found := s.manager.FindFunctionForURI(completions.Items[i].Label, params.TextDocument.URI); found && len(symbol.Params) > 0 && symbol.ParamTypes[symbol.Params[0]] == expected {
+						relation := typeinfo.Unknown
+						if symbol, found := s.manager.FindFunctionForURI(completions.Items[i].Label, params.TextDocument.URI); found {
+							if expected.receiver && len(symbol.Params) > 0 {
+								relation = s.manager.TypeRelation(expected.typ, symbol.TypeRef(symbol.ParamTypes[symbol.Params[0]]))
+							} else if !expected.receiver {
+								relation = s.manager.TypeRelation(symbol.TypeRef(symbol.ReturnType), expected.typ)
+							}
+						}
+						if relation == typeinfo.Compatible {
 							completions.Items[i].SortText = "0-" + completions.Items[i].Label
 						} else {
 							completions.Items[i].SortText = "1-" + completions.Items[i].Label
 						}
 					}
-					for name := range s.scopeVariables(params.TextDocument.URI, region, inner.Line, fn, expected) {
-						completions.Items = append(completions.Items, index.CompletionItem{Label: name, Kind: 6, SortText: "0-" + name})
+					if !expected.receiver {
+						for name, typ := range s.scopeVariables(params.TextDocument.URI, region, inner, fn) {
+							relation := s.manager.TypeRelation(typ, expected.typ)
+							if relation == typeinfo.Incompatible {
+								continue
+							}
+							rank := "1-"
+							if relation == typeinfo.Compatible {
+								rank = "0-"
+							}
+							completions.Items = append(completions.Items, index.CompletionItem{Label: name, Kind: 6, SortText: rank + name, Detail: strings.TrimPrefix(typ.Name, "sys::")})
+						}
 					}
 				}
 				return s.writeResponse(msg.ID, completions, nil)
@@ -329,43 +349,40 @@ func (s *Server) handle(msg requestMessage) error {
 	}
 }
 
-func (s *Server) expectedCompletionType(uri string, region embeddedRegionView, pos index.Position, owner *xeto.ParsedFunction) (string, bool) {
-	line, ok := region.innerLine(pos.Line)
-	if !ok {
-		return "", false
-	}
-	prefix := line[:min(pos.Character, len(line))]
-	if dot := strings.LastIndex(prefix, "."); dot >= 0 && dot == len(strings.TrimRight(prefix, " \t"))-1 {
-		receiver := strings.TrimSpace(prefix[:dot])
-		return s.embeddedExpressionType(uri, region, pos.Line, receiver, owner)
-	}
-	if name, active, found := callAtPosition(region, pos); found {
-		symbol, found := s.manager.FindFunctionForURI(name, uri)
-		if found && active < len(symbol.Params) {
-			return symbol.ParamTypes[symbol.Params[active]], true
-		}
-	}
-	return "", false
+type completionTypeContext struct {
+	typ      typeinfo.Ref
+	receiver bool
 }
 
-func (s *Server) scopeVariables(uri string, region embeddedRegionView, lineNumber int, owner *xeto.ParsedFunction, expected string) map[string]struct{} {
-	variables := map[string]struct{}{}
-	if owner != nil {
-		for name, typeName := range owner.ParamTypes {
-			if expected == "" || typeName == expected {
-				variables[name] = struct{}{}
-			}
+func (s *Server) expectedCompletionType(uri string, region embeddedRegionView, pos index.Position, owner *xeto.ParsedFunction) (completionTypeContext, bool) {
+	line, ok := region.innerLine(pos.Line)
+	if !ok {
+		return completionTypeContext{}, false
+	}
+	prefix := line[:utf16ByteColumn(line, pos.Character)]
+	if dot := strings.LastIndex(prefix, "."); dot >= 0 && dot == len(strings.TrimRight(prefix, " \t"))-1 {
+		receiver := strings.TrimSpace(prefix[:dot])
+		typ, known := s.embeddedExpressionRef(uri, region, pos, receiver, owner)
+		return completionTypeContext{typ: typ, receiver: true}, known
+	}
+	if name, active, found := callAtPosition(region, pos); found {
+		if _, shadowed := embeddedScopeModel(region, owner).ResolveAt(name, pos.Line, pos.Character); shadowed {
+			return completionTypeContext{}, false
+		}
+		symbol, found := s.manager.FindFunctionForURI(name, uri)
+		if found && active < len(symbol.Params) {
+			return completionTypeContext{typ: symbol.TypeRef(symbol.ParamTypes[symbol.Params[active]])}, true
 		}
 	}
-	for i := 0; i <= lineNumber && i < len(region.lines); i++ {
-		line := strings.TrimSpace(region.lines[i])
-		colon := strings.Index(line, ":")
-		if colon > 0 && isIdentifier(strings.TrimSpace(line[:colon])) {
-			name := strings.TrimSpace(line[:colon])
-			if typeName, _, found := s.embeddedLocalType(uri, region, i, name, owner); found && (expected == "" || typeName == expected) {
-				variables[name] = struct{}{}
-			}
-		}
+	return completionTypeContext{}, false
+}
+
+func (s *Server) scopeVariables(uri string, region embeddedRegionView, pos index.Position, owner *xeto.ParsedFunction) map[string]typeinfo.Ref {
+	variables := map[string]typeinfo.Ref{}
+	model := embeddedScopeModel(region, owner)
+	for name := range model.NamesAtPosition(pos.Line, pos.Character) {
+		typ, _ := s.expressionRef(uri, name, pos, model, owner, 0)
+		variables[name] = typ
 	}
 	return variables
 }
@@ -910,36 +927,13 @@ func (s *Server) embeddedLocalType(uri string, region embeddedRegionView, lineNu
 }
 
 func (s *Server) embeddedExpressionType(uri string, region embeddedRegionView, lineNumber int, expression string, owner *xeto.ParsedFunction) (string, bool) {
-	expression = strings.TrimSpace(expression)
-	if typeName, ok := literalType(expression); ok {
-		return typeName, true
+	line, _ := region.innerLine(lineNumber)
+	typ, known := s.embeddedExpressionRef(uri, region, index.Position{Line: lineNumber, Character: len(utf16.Encode([]rune(line)))}, expression, owner)
+	name := strings.TrimPrefix(typ.Name, "sys::")
+	if name == "None" {
+		name = "null"
 	}
-	if strings.Contains(expression, "+") {
-		parts := strings.Split(expression, "+")
-		left, lok := s.embeddedExpressionType(uri, region, lineNumber, strings.TrimSpace(parts[0]), owner)
-		right, rok := s.embeddedExpressionType(uri, region, lineNumber, strings.TrimSpace(strings.Join(parts[1:], "+")), owner)
-		if lok && rok && left == right {
-			return left, true
-		}
-	}
-	if calledName, ok := expressionCallName(expression); ok {
-		if fn, found := s.manager.FindFunctionForURI(calledName, uri); found && fn.ReturnType != "" {
-			return fn.ReturnType, true
-		}
-		if owner != nil && calledName == owner.Name && owner.ReturnType != "" {
-			return owner.ReturnType, true
-		}
-	}
-	model := embeddedScopeModel(region, owner)
-	if binding, ok := model.Resolve(expression, lineNumber); ok {
-		if binding.Type != "" {
-			return binding.Type, true
-		}
-		if binding.Expression != "" && binding.Line >= 0 && binding.Line != lineNumber {
-			return s.embeddedExpressionType(uri, region, binding.Line, binding.Expression, owner)
-		}
-	}
-	return "", false
+	return name, known
 }
 
 func embeddedScopeModel(region embeddedRegionView, owner *xeto.ParsedFunction) *scope.Model {
@@ -948,45 +942,6 @@ func embeddedScopeModel(region embeddedRegionView, owner *xeto.ParsedFunction) *
 		params = owner.ParamTypes
 	}
 	return scope.Analyze(strings.Join(region.lines, "\n"), params)
-}
-
-func expressionCallName(expression string) (string, bool) {
-	parsed := axon.Parse(expression)
-	if len(parsed.Errors) != 0 || len(parsed.Expressions) != 1 {
-		return "", false
-	}
-	node := parsed.Expressions[0]
-	for group, ok := node.(*axon.GroupExpr); ok; group, ok = node.(*axon.GroupExpr) {
-		node = group.Expression
-	}
-	if call, ok := node.(*axon.CallExpr); ok {
-		switch callee := call.Callee.(type) {
-		case *axon.NameExpr:
-			return callee.Name, true
-		case *axon.MemberExpr:
-			return callee.Name, true
-		}
-	}
-	if member, ok := node.(*axon.MemberExpr); ok {
-		return member.Name, true
-	}
-	return "", false
-}
-
-func isIdentifier(value string) bool {
-	if value == "" {
-		return false
-	}
-	for i := 0; i < len(value); i++ {
-		if !isIdentifierChar(value[i]) || (i == 0 && value[i] >= '0' && value[i] <= '9') {
-			return false
-		}
-	}
-	return true
-}
-
-func isIdentifierChar(ch byte) bool {
-	return ch == '_' || ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9'
 }
 
 func literalAt(line string, character int) (string, bool) {
@@ -1180,7 +1135,7 @@ func (s *Server) validateEmbeddedAxon(uri, doc string) []index.Diagnostic {
 			continue
 		}
 		serverLog.Printf("diagnostics xeto validate fn=%s uri=%s region=%d:%d", fn.Name, uri, fn.Embedded.StartLine, fn.Embedded.EndLine)
-		diagnostics := diag.ValidateRegionWithScope(uri, fn.Embedded.Text, s.manager, first, s.warnMissingArguments(), fn.Params)
+		diagnostics := diag.ValidateRegionWithTypes(uri, fn.Embedded.Text, s.manager, first, s.warnMissingArguments(), fn.ParamTypes)
 		first = false
 		for _, d := range diagnostics {
 			all = append(all, mapEmbeddedDiagnostic(fn.Embedded, d))

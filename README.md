@@ -67,7 +67,7 @@ Available settings:
 - `axonLsp.externalPaths`: additional source directories outside the workspace, including Haxall installations or source checkouts
 - `axonLsp.mode`: function-metadata preference (`auto`, `defs`, or `specs`; default: `auto`)
 - `axonLsp.indexAllWorkspaceFolders`: index every folder in a multi-root VS Code workspace as local Axon sources
-- `axonLsp.ignoreBundledXetoCache`: ignore bundled Xeto function metadata while retaining workspace, external-path, and archive sources, plus the legacy defs cache (default: `false`)
+- `axonLsp.ignoreBundledXetoCache`: ignore bundled Xeto function/nominal type metadata while retaining workspace, external-path, and archive sources, plus the legacy defs cache and intrinsic primitive checks (default: `false`)
 - `axonLsp.warnMissingArguments`: warn about omitted required arguments (default: `true`); explicit Xeto parameter defaults permit omission without changing the declared nullability
 
 Notes:
@@ -79,7 +79,7 @@ Notes:
 - If the same function exists in multiple places, requests prefer definitions in the current file, then workspace sources, then configured external roots, then the bundled core cache. Selected workspace folders form one index; there is no separate local/global workspace tier.
 - Within the workspace, editable sources take precedence over `.xetolib` entries. The same rule applies within each external root. Unsaved edits update lookup, completions, hover, signature help, definitions, and diagnostics for open documents; closing a buffer restores its disk content or falls back to the remaining sources.
 - Within `axonLsp.externalPaths`, earlier paths take precedence when functions have the same name. These paths do not control the bundled cache.
-- Enable `axonLsp.ignoreBundledXetoCache` to exclude bundled Xeto metadata from function lookup, completions, hover, signature help, definitions, and diagnostic resolution in every mode. Changes apply without restarting the server and refresh diagnostics for open documents. Legacy bundled defs remain available as fallback; this is not a workspace-only setting and does not remove bundled assets from the extension.
+- Enable `axonLsp.ignoreBundledXetoCache` to exclude bundled Xeto metadata from function lookup, nominal ancestry, completions, hover, signature help, definitions, and diagnostic resolution in every mode. Changes apply without restarting the server and refresh diagnostics for open documents. Legacy bundled defs and intrinsic primitive checks remain available; this is not a workspace-only setting and does not remove bundled assets from the extension.
 - Enable VS Code's `editor.stickyScroll.enabled` setting to keep the current function declaration visible while scrolling through long bodies.
 
 ### Xetolib Archives
@@ -135,8 +135,9 @@ The extension keeps a compact cached backstop rather than shipping the full Haxa
 
 The bundled source baseline also includes Project Haystack's separate Xeto 5.0.0
 standard libraries (`sys`, `ph`, and related libraries), their build properties,
-and license texts. This makes the missing type definitions available; it does
-not yet add inheritance-aware hints or structural validation. Maintainers can
+and license texts. A generated nominal type/base catalog supports declared
+inheritance in embedded Xeto receiver/argument hints and conservative argument
+diagnostics; structural field validation remains deferred. Maintainers can
 regenerate the pinned baseline with `npm run build:cache` and verify it without
 writing files with `npm run check:cache`. See [cache baseline documentation](docs/cache-baseline.md)
 and [third-party notices](THIRD_PARTY_NOTICES.md).

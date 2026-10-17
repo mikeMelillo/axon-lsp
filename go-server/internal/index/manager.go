@@ -11,6 +11,7 @@ import (
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/cache"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/fantom"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/trio"
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/typeinfo"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/xeto"
 )
 
@@ -37,10 +38,18 @@ type Manager struct {
 	extraRoots             []ScanRoot
 	archives               map[string]archiveSource
 	archiveOwners          map[string]string
+	bundledTypes           []typeinfo.Library
+	workspaceFileTypes     map[string]typeinfo.Document
+	externalFileTypes      map[string]typeinfo.Document
+	typeCatalog            *typeinfo.Catalog
 }
 
 func NewManager() (*Manager, error) {
 	core, err := cache.LoadEmbeddedFunctions()
+	if err != nil {
+		return nil, err
+	}
+	types, err := cache.LoadEmbeddedTypes()
 	if err != nil {
 		return nil, err
 	}
@@ -58,8 +67,12 @@ func NewManager() (*Manager, error) {
 		documentSymbols:      map[string][]DocumentSymbol{},
 		archives:             map[string]archiveSource{},
 		archiveOwners:        map[string]string{},
+		bundledTypes:         types,
+		workspaceFileTypes:   map[string]typeinfo.Document{},
+		externalFileTypes:    map[string]typeinfo.Document{},
 	}
 	mgr.rebuildCoreFuncsLocked()
+	mgr.rebuildTypeCatalogLocked()
 	return mgr, nil
 }
 
@@ -101,6 +114,7 @@ func (m *Manager) SetIgnoreBundledXetoCache(ignore bool) {
 	defer m.mu.Unlock()
 	m.ignoreBundledXetoCache = ignore
 	m.rebuildCoreFuncsLocked()
+	m.rebuildTypeCatalogLocked()
 }
 
 func (m *Manager) UpdateLocalIndex(workspaceRoot string) {
@@ -111,13 +125,16 @@ func (m *Manager) SetWorkspaceRoots(roots []ScanRoot) {
 	paths := normalizeScanRoots(roots)
 	fileSymbols := map[string]map[string]Symbol{}
 	fileSpecs := map[string]map[string]struct{}{}
+	fileTypes := map[string]typeinfo.Document{}
 	docSymbols := map[string][]DocumentSymbol{}
 	archives := map[string]map[string]string{}
 	for _, root := range paths {
 		label := workspaceRootLabel(root)
 		scanRoot(root.Path, label, func(uri string, symbols map[string]Symbol, docs []DocumentSymbol) {
 			if strings.HasSuffix(strings.ToLower(pathFromURI(uri)), ".xeto") {
-				fileSpecs[uri] = xeto.ParseSpecNames(mustReadFile(pathFromURI(uri)))
+				content := mustReadFile(pathFromURI(uri))
+				fileSpecs[uri] = xeto.ParseSpecNames(content)
+				fileTypes[uri] = parseTypeDocument(uri, content)
 			}
 			if len(symbols) > 0 {
 				fileSymbols[uri] = annotateSymbols(symbols, label, OriginLocal)
@@ -132,10 +149,12 @@ func (m *Manager) SetWorkspaceRoots(roots []ScanRoot) {
 	m.workspaceRoots = paths
 	m.workspaceFileSymbols = fileSymbols
 	m.workspaceFileSpecs = fileSpecs
+	m.workspaceFileTypes = fileTypes
 	mergeDocumentSymbols(m.documentSymbols, docSymbols)
 	m.replaceArchivesLocked(OriginLocal, archives)
 	m.rebuildLocalFuncsLocked()
 	m.rebuildExternalFuncsLocked()
+	m.rebuildTypeCatalogLocked()
 	m.mu.Unlock()
 }
 
@@ -143,6 +162,7 @@ func (m *Manager) SetExtraRoots(roots []ScanRoot) {
 	paths := normalizeScanRoots(roots)
 	externalFileSymbols := map[string]map[string]Symbol{}
 	externalFileSpecs := map[string]map[string]struct{}{}
+	fileTypes := map[string]typeinfo.Document{}
 	docSymbols := map[string][]DocumentSymbol{}
 	archives := map[string]map[string]string{}
 	m.mu.RLock()
@@ -155,7 +175,9 @@ func (m *Manager) SetExtraRoots(roots []ScanRoot) {
 				return
 			}
 			if strings.HasSuffix(strings.ToLower(pathFromURI(uri)), ".xeto") {
-				externalFileSpecs[uri] = xeto.ParseSpecNames(mustReadFile(pathFromURI(uri)))
+				content := mustReadFile(pathFromURI(uri))
+				externalFileSpecs[uri] = xeto.ParseSpecNames(content)
+				fileTypes[uri] = parseTypeDocument(uri, content)
 			}
 			if len(symbols) > 0 {
 				externalFileSymbols[uri] = annotateSymbols(symbols, label, OriginExternal)
@@ -174,14 +196,16 @@ func (m *Manager) SetExtraRoots(roots []ScanRoot) {
 	m.extraRoots = paths
 	m.externalFileSymbols = externalFileSymbols
 	m.externalFileSpecs = externalFileSpecs
+	m.externalFileTypes = fileTypes
 	mergeDocumentSymbols(m.documentSymbols, docSymbols)
 	m.replaceArchivesLocked(OriginExternal, archives)
 	m.rebuildExternalFuncsLocked()
+	m.rebuildTypeCatalogLocked()
 	m.mu.Unlock()
 }
 
 func (m *Manager) UpdateDocument(uri, content string) {
-	if strings.HasPrefix(uri, "axon-ext:/xetolib/") || strings.EqualFold(filepath.Ext(pathFromURI(uri)), ".xetolib") {
+	if strings.HasPrefix(uri, "axon-ext:/") || strings.EqualFold(filepath.Ext(pathFromURI(uri)), ".xetolib") {
 		return
 	}
 	uri = normalizeSourceURI(uri)
@@ -208,19 +232,28 @@ func (m *Manager) UpdateDocument(uri, content string) {
 	if strings.HasSuffix(strings.ToLower(path), ".xeto") {
 		if origin == OriginExternal {
 			m.externalFileSpecs[uri] = xeto.ParseSpecNames(content)
+			m.externalFileTypes[uri] = parseTypeDocument(uri, content)
+			delete(m.workspaceFileTypes, uri)
 		} else {
 			m.workspaceFileSpecs[uri] = xeto.ParseSpecNames(content)
+			m.workspaceFileTypes[uri] = parseTypeDocument(uri, content)
+			delete(m.externalFileTypes, uri)
 		}
 	} else {
 		delete(m.workspaceFileSpecs, uri)
 		delete(m.externalFileSpecs, uri)
+		delete(m.workspaceFileTypes, uri)
+		delete(m.externalFileTypes, uri)
 	}
 	m.rebuildLocalFuncsLocked()
 	m.rebuildExternalFuncsLocked()
+	if strings.HasSuffix(strings.ToLower(path), ".xeto") {
+		m.rebuildTypeCatalogLocked()
+	}
 }
 
 func (m *Manager) RemoveDocument(uri string) {
-	if strings.HasPrefix(uri, "axon-ext:/xetolib/") {
+	if strings.HasPrefix(uri, "axon-ext:/") {
 		return
 	}
 	uri = normalizeSourceURI(uri)
@@ -234,8 +267,13 @@ func (m *Manager) RemoveDocument(uri string) {
 	delete(m.documentSymbols, uri)
 	delete(m.workspaceFileSpecs, uri)
 	delete(m.externalFileSpecs, uri)
+	delete(m.workspaceFileTypes, uri)
+	delete(m.externalFileTypes, uri)
 	m.rebuildLocalFuncsLocked()
 	m.rebuildExternalFuncsLocked()
+	if ext := strings.ToLower(filepath.Ext(pathFromURI(uri))); ext == ".xeto" || ext == ".xetolib" {
+		m.rebuildTypeCatalogLocked()
+	}
 }
 
 // HasSpecName reports whether a name is declared by any indexed Xeto source.

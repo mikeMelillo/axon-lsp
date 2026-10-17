@@ -2,7 +2,7 @@
   "name": "axon-lsp",
   "displayName": "Axon LSP (Project Haystack)",
   "description": "LSP and Syntax Highlighting for the Axon programming language",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "publisher": "mikeMelillo",
   "engines": {
     "vscode": "^1.80.0"
@@ -94,7 +94,7 @@
           "type": "boolean",
           "default": false,
           "scope": "window",
-          "description": "Ignore bundled Xeto function metadata in all lookup modes. Workspace sources, configured external paths, and .xetolib archives remain available, along with the legacy defs cache. Changes take effect without restarting the language server."
+          "description": "Ignore bundled Xeto function and nominal type metadata in all lookup modes. Workspace sources, configured external paths, and .xetolib archives remain available, along with the legacy defs cache and intrinsic primitive checks. Changes take effect without restarting the language server."
         },
         "axonLsp.warnMissingArguments": {
           "type": "boolean",

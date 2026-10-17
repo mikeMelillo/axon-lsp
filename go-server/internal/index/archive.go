@@ -70,6 +70,8 @@ func (m *Manager) removeArchiveLocked(owner string) {
 		delete(m.externalFileSymbols, uri)
 		delete(m.workspaceFileSpecs, uri)
 		delete(m.externalFileSpecs, uri)
+		delete(m.workspaceFileTypes, uri)
+		delete(m.externalFileTypes, uri)
 		delete(m.documentSymbols, uri)
 		delete(m.archiveOwners, uri)
 		for name, refs := range m.ReferencesMap {
@@ -106,9 +108,11 @@ func (m *Manager) installArchiveLocked(owner string, entries map[string]string) 
 		if origin == OriginExternal {
 			m.externalFileSymbols[uri] = annotateSymbols(symbols, label, origin)
 			m.externalFileSpecs[uri] = xeto.ParseSpecNames(content)
+			m.externalFileTypes[uri] = parseTypeDocument(uri, content)
 		} else {
 			m.workspaceFileSymbols[uri] = annotateSymbols(symbols, label, origin)
 			m.workspaceFileSpecs[uri] = xeto.ParseSpecNames(content)
+			m.workspaceFileTypes[uri] = parseTypeDocument(uri, content)
 		}
 		m.documentSymbols[uri] = docs
 		m.archiveOwners[uri] = owner
@@ -135,6 +139,7 @@ func (m *Manager) UpdateArchive(uri string) error {
 	}
 	m.rebuildLocalFuncsLocked()
 	m.rebuildExternalFuncsLocked()
+	m.rebuildTypeCatalogLocked()
 	return err
 }
 

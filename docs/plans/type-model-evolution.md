@@ -1,13 +1,17 @@
-# Type-Model Evolution After the Analysis Foundation
+# Type-Model Evolution
 
-Status: **draft for review; not implemented or an approved release scope**.
+Status: **T0 implemented in the current working changes; T1–T3 remain drafts for
+review, not implemented or approved release scopes**.
 
 Analysis date: 2026-10-16. Baseline: `e814e54` (0.4.3).
-Prerequisite plan: [analysis foundation](analysis-foundation.md).
+Foundation plan for the broader T1–T3 work: [analysis foundation](analysis-foundation.md).
 Current behavior: [analysis and type reference](../type-intelligence.md).
 
-## 1. The three later change paths
+## 1. An early milestone and three later change paths
 
+- **T0 — Early declared nominal inheritance:** a lightweight qualified base
+  catalog and shared directional compatibility queries. Delivered independently
+  of structural fitting and the broader foundation projects.
 - **T1 — Flow-sensitive reassignment inference:** recover useful types at an
   exact program position without inventing closure/branch execution.
 - **T2 — Static trap-result typing:** use trustworthy literal shapes or resolved
@@ -26,14 +30,14 @@ mapping, recovery confidence, and semantic name identities are prerequisites.
 | Binding model | `scope.Analyze` records initializer text, declaration span data, and assignments as name/position pairs | Cannot evaluate the RHS of a write or distinguish executed writes from deferred closure writes |
 | Mutation handling | `scope.ResolveAt` clears Type/Expression after an earlier source-positioned write resolves to the same binding | Safe loss of precision, not flow analysis; no branch join or call effect model |
 | Editor queries | Embedded hover/type helpers often call line-end `Resolve`; completion scans declarations separately | Fix exact-position/visibility disagreement before adding stronger type claims |
-| Expression types | Diagnostics use literals/global returns; LSP has a separate string-based expression/local evaluator | A new rule in one path would not consistently affect the others |
-| Type representation | `ParamTypes`/`ReturnType` are strings; `?` is interpreted with suffix checks | No stable identity, generic/ref target, union/intersection, provenance, or ambiguity result |
+| Expression types | Diagnostics use literals/global returns/typed owner inputs; LSP has a bounded AST-based initializer evaluator | Nominal compatibility is shared, but full expression inference is not yet shared |
+| Type representation | Signature fields remain strings; T0 attaches their declaration URI when querying qualified nominal identities | No generic/ref target, union/intersection, or complete shared value-fact model |
 | Null | Semantic literal type is `None`, hover renders `null`, nullable returns suppress definite mismatch claims | Preserve these distinctions in a shared internal model, not separate string conventions |
-| Xeto specs | `ParseSpecNames` captures top-level uppercase names; `HasSpecName` checks any indexed workspace/external source | No slot/base/mixin graph, library visibility, or unique qualified resolution |
+| Xeto specs | Coarse `HasSpecName` remains; T0 separately parses simple top-level bases and contextual identities | No effective slots, mixins, structural fitting, or strict versioned namespace |
 | Function catalog | Provider precedence works, but symbols are primarily keyed by simple function names; `Qualified` is not populated by the current adapters | Source precedence must not be mistaken for namespace or dependency resolution |
 | Xeto metadata | Signature parser retains type strings and `axon` defaults, with special handling for `maybe` | Important metadata such as `of` is not a semantic TypeRef; adding trap types needs richer data ingestion |
 | Archives | Sources are read in memory, with bounded ZIP parsing and atomic replacement/purge | Reuse lifecycle/security behavior; archive URI hashes identify the provider path, not its version or contents |
-| Bundled assets | Function variants and Xeto source text are bundled; cache builder does not emit a structural spec/library catalog | Builtin type coverage needs an additive cache format or a deliberate lazy source-indexing policy |
+| Bundled assets | Function/source assets plus versioned `type_catalog.json` with modern library provenance and declared bases | Extend the nominal subset for effective slots; do not claim the catalog is a Xeto compiler |
 
 Relevant Go entry points:
 
@@ -72,9 +76,59 @@ it. A neutral `internal/types` or analysis subpackage is a possible boundary;
 keep LSP JSON types and index implementation out of the core to avoid cycles.
 Do not build a general-purpose type framework before the first useful queries.
 
-Initially normalize known builtin spellings conservatively and retain unresolved
-type text. `Number` is not automatically equivalent to an unrelated library's
-same-spelled type. Qualified identities become essential in T3 metadata work.
+T0 normalizes known builtin spellings conservatively and retains unresolved type
+text. `Number` is not equivalent to an unrelated library's same-spelled type.
+Its minimal contextual identities are the starting point for richer T3 metadata,
+not a replacement for a complete value-fact or versioned namespace model.
+
+## 3a. T0: early declared nominal inheritance
+
+**Implemented ahead of T1–T3.** Full parser recovery, flow-sensitive inference,
+structural checking, and dependency/version solving are not prerequisites.
+
+- `internal/typeinfo` owns a directional three-way relation and immutable
+  catalog. `Int → Number → Scalar → Obj` and
+  `Entity → Dict → Collection → Obj` come from the pinned standard sources.
+- The cache builder emits an additive schema-versioned `type_catalog.json`:
+  library/type identities, simple declared bases, document completeness, source
+  URIs, provider IDs, versions, and pinned revisions. It excludes the legacy
+  Haxall 3.x graph instead of mixing revisions by spelling.
+- Workspace/external sources and archive entries use the same narrow parser.
+  Named library directories require a `lib.xeto`; loose source directories are
+  anonymous contextual scopes. Imports are literal manifest dependency names
+  plus `sys`. Version constraints/BuildVars are not solved by this query.
+- Whole-library precedence is workspace editable, workspace archive, configured
+  external root order (editable before archive within a root), then bundled.
+  Equally ranked copies, duplicate declarations, missing/ambiguous imports,
+  unsupported headers, missing bases, cycles, and over-budget paths yield unknown.
+  A selected library's missing declaration is never filled from a lower copy.
+- A type spelling stays attached to its declaring source, including selected
+  function returns. Identity is qualified and provider-specific, not a simple
+  name comparison. Superseded providers cannot reappear through signature URIs.
+- Receiver completion compares actual receiver to candidate first parameter.
+  Argument completion compares variables/function returns to the active expected
+  parameter. Both use the shared relation; unknown function candidates remain
+  visible. Scoped suggestions respect cursor visibility and mutation invalidation.
+- Argument diagnostics propagate declared owner input types and reuse the same
+  relation. Positive ancestry is accepted, but a failed nominal search is **not**
+  a structural mismatch. Definite intrinsic category failures and null supplied
+  to a resolved non-null contract warn.
+- Existing omission defaults, nullable-return conservatism, and the special
+  `Obj`/null policy are retained. Unknown is not `Obj`, null, or an undefined name.
+  Numeric subtype constraints are not enforced from literal spelling.
+- Index replacement publishes a fresh immutable catalog on Xeto/manifest edits,
+  removal, archive replacement/purge, root changes, and bundled-cache settings.
+  Disabling bundled Xeto hides its graph; intrinsic primitive checks and indexed
+  sources remain. Traversal is capped at 128 nodes and initializer queries at 32
+  recursive steps; no graph memoization or runtime execution is introduced.
+
+Focused tests own lexical extraction, graph direction/ambiguity/budgets,
+generated provenance, provider lifecycle, completion direction, and typed-input
+diagnostics. This is nominal information only: required fields, effective slots,
+compound/mixin types, ref targets, numeric fidelity, dependency constraints,
+flow-sensitive writes, and trap-result typing remain deferred. Completion type
+ranking currently applies to embedded Xeto bodies; this is not a broad Trio
+completion/source-mapping rewrite.
 
 ## 4. T1: flow-sensitive reassignment inference
 
@@ -276,7 +330,7 @@ Paths below are under the clean pinned 4.0.6 checkout.
 **Likely files:** Xeto parsing/model types, index types/manager/archive lifecycle,
 cache serialization/builder; new narrow metadata/query helpers if necessary.
 
-1. Add a parsed document model alongside existing function parsing: declared
+1. Expand T0's narrow parsed document model alongside existing function parsing: declared
    specs, slots, base/type expressions, mixins, metadata, source spans, and a
    library manifest. Reuse quote/nesting-aware scans but do not attempt a spec
    tree with a top-level-name regex. Keep existing parser adapters while migrating.
@@ -295,8 +349,8 @@ cache serialization/builder; new narrow metadata/query helpers if necessary.
 5. Provide a contextual spec/type query, not a replacement global `HasSpecName`
    boolean. Keep the existing coarse check as a compatibility fallback where
    no trustworthy namespace is available, explicitly marked as such.
-6. Choose an additive, schema-versioned structural catalog or a measured lazy
-   parse of bundled Xeto sources. Prefer generated metadata for predictable
+6. Extend T0's additive, schema-versioned catalog for structural metadata, or
+   choose a measured lazy parse of bundled Xeto sources. Prefer generated metadata for predictable
    startup; preserve old function-cache readers/defaults while migrating. Full
    sys/ph dependency coverage must be audited: source text shipping with the
    Haxall cache is not proof that every dependency is included.
@@ -360,7 +414,7 @@ Change path:
    required/maybe slots, supported primitive slot types, and simple resolved
    inheritance. Missing required slots need complete effective metadata and
    definitely absent values. An open Dict cannot justify that warning.
-3. Support positive nominal inheritance and safe structural mismatch evidence.
+3. Reuse T0's positive nominal inheritance and add safe structural mismatch evidence.
    Additional slots are not automatically forbidden; global-slot constraints
    and distinctive-match requirements must be accounted for before claiming a
    complete fit. Spec-to-spec fitting is not the same algorithm as value fitting.
@@ -382,6 +436,10 @@ cases with pinned upstream behavior, not only with self-authored Go tests.
 ## 7. Dependency and delivery map
 
 ```text
+T0 declared nominal identities/base graph (implemented independently)
+  +-- receiver/argument compatibility
+  +-- reusable subset of T3a metadata
+
 F1/F2 reliable views, ASTs, roles, and binding identities
   |
   +-- shared type facts --> T1a --> T1b --> optional T1c precision
@@ -423,7 +481,7 @@ bundle them all into the next release or change all index keys in one commit.
 
 Decisions for review:
 
-1. Approve T1a as the first type feature after F1/F2, keeping branch/closure
+1. Approve T1a as the next inference milestone after F1/F2, keeping branch/closure
    precision separate?
 2. Deliver T2a literal-shape facts before investing in a full spec catalog?
 3. Approve T3a's minimal metadata subset as a prerequisite for T2b, without
@@ -435,5 +493,6 @@ Decisions for review:
 6. Confirm static/offline analysis only: no runtime/database connections,
    automatic library downloads, or build execution?
 
-This is a planning record. No type engine, cache migration, new tests, protocol
-fields, settings, version bumps, or release claims were added by this document.
+This record now distinguishes implemented T0 from the preserved T1–T3 proposals.
+Those later proposals do not imply new protocol fields, settings, version bumps,
+or release commitments.

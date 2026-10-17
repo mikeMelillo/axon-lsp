@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/typeinfo"
 )
 
 func BenchmarkUpdateDocumentMediumTrio(b *testing.B) {
@@ -49,6 +51,16 @@ func BenchmarkWorkspaceSymbolQuery(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = mgr.GetWorkspaceSymbols(queries[i%len(queries)])
+	}
+}
+
+func BenchmarkNominalCompatibility(b *testing.B) {
+	mgr := mustNewManager(b)
+	actual, expected := typeinfo.Builtin("Entity"), typeinfo.Ref{Name: "sys::Collection"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = mgr.TypeRelation(actual, expected)
 	}
 }
 

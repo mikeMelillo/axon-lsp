@@ -14,4 +14,7 @@ var (
 
 	//go:embed assets/cache_manifest.json
 	EmbeddedBaselineManifest []byte
+
+	//go:embed assets/type_catalog.json
+	EmbeddedTypeCatalog []byte
 )
