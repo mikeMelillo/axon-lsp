@@ -12,7 +12,7 @@ This project supports legacy Trio/Fantom workflows alongside Haxall 4.x Xeto fun
 - Require an existing binding for `=` reassignment; preserve same-line ordering, lexical scope, and conservative typing after mutation.
 - Preserve call context and source positions in Trio and embedded Xeto, with improved recovery around incomplete arrows and multiline Trio `src:` fields.
 
-See [parser notes](docs/plane_notes.md) for validation results and remaining limitations.
+See the [analysis and type reference](docs/type-intelligence.md) for validation results and known limitations.
 
 ## Features
 
@@ -248,7 +248,7 @@ If that path points inside `~/.vscode-server/extensions/` (remote) or `~/.vscode
 
 ## Roadmap
 
-See [ROADMAP.md](./ROADMAP.md) for the current plan.
+See [ROADMAP.md](./ROADMAP.md) for product direction and the [planning index](docs/plans/README.md) for implementation proposals.
 
 ## License
 

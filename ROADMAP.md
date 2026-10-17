@@ -2,6 +2,11 @@
 
 ## Version 0.4.x - Current Direction
 
+This is the product-level roadmap. Detailed implementation proposals and their
+review status live in the [planning index](docs/plans/README.md); implemented
+behavior and known limitations are documented in the
+[analysis and type reference](docs/type-intelligence.md).
+
 ### Completed
 
 - Go-based language server bundled directly in the VSIX
@@ -22,38 +27,22 @@
 - Source-spanned trap (`->`) expressions, tag-path handling, and mixed call/index chains
 - Position-aware definition/reassignment diagnostics and conservative mutation typing
 
-### Phase B - Legacy Support Polish
+### Direction
 
-- Expand cached core and SkySpark function coverage
-- Improve hover and definition ergonomics
-- Improve workspace indexing and multi-directory support
-- Continue tightening parser and diagnostic edge cases
-- Expand syntax recovery/reporting without speculative diagnostics on partial code
+- Make parsing, recovery, source mapping, and name resolution more consistent
+  across editor features before adding broader diagnostics.
+- Add useful type inference incrementally, preserving unknown results where
+  runtime behavior or metadata is incomplete.
+- Extend Xeto support with qualified spec/slot modeling, offline library/version
+  contexts, and carefully bounded structural conformance.
+- Continue legacy workflows and catalog coverage while supporting the 4.x shift
+  away from `defcomp`.
+- Explore snippets, optional code-quality checks, and preservation-safe formatting
+  after the analysis foundation is dependable.
 
-### Phase C - Richer Xeto Intelligence
-
-- Prepare for the migration away from `defcomp`
-- Introduce spec-oriented symbol and type modeling
-- Extend existing Xeto workflows with richer type metadata and structural conformance
-- Add library dependency/version selection beyond source-root archive precedence
-- Add flow-sensitive variable inference; trap results currently remain unknown
-- See `docs/type-intelligence.md` for the active type-intelligence plan.
-
-## Architecture Notes
-
-### Current (Legacy and Haxall 4.x Sources)
-
-- Indexes `.fan` files with `@Axon` annotations
-- Indexes `.trio` files with `func` records
-- Indexes Xeto functions/spec names and in-memory `.xetolib` source documents
-- Parses embedded Axon expressions and lexical bindings for conservative diagnostics
-- Provides a cached core-function backstop
-- Uses a VS Code TypeScript client with a bundled Go server over stdio
-
-### Further Work
-
-- Expand the existing Xeto name/function index into richer spec and library dependency modeling
-- Type-aware editor features will likely move beyond function-only metadata
+The planning index owns priorities and the deferred backlog; its detailed plans
+own delivery sequences and acceptance criteria. Proposals are not release
+commitments.
 
 ## Recent Notes
 
