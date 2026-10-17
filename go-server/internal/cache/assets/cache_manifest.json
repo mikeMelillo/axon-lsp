@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "coreDefs",
+      "model": "defs",
+      "version": "3.1.12",
+      "sha256": "2ae27c47f808eb38bbda1145ec7b3dce458f01b1ddb61a8cbb085e06f8b9b09b"
+    },
+    {
+      "id": "haxall31",
+      "model": "defs",
+      "version": "3.1.12",
+      "repository": "https://github.com/haxall/haxall",
+      "revision": "ec4ab0bae96ed840d0888be2164fe672cdee8781",
+      "asset_prefix": "haxall/3.1.12",
+      "license": "AFL-3.0",
+      "libraries": [
+        "axon",
+        "hx.api",
+        "hx.conn"
+      ]
+    },
+    {
+      "id": "haxall40",
+      "model": "specs",
+      "version": "4.0.6",
+      "repository": "https://github.com/haxall/haxall",
+      "revision": "b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f",
+      "asset_prefix": "haxall/4.0.6",
+      "license": "AFL-3.0",
+      "build_properties": {
+        "hx.depend": "4.0.6",
+        "hx.license": "AFL-3.0",
+        "hx.org.dis": "Haxall",
+        "hx.org.uri": "https://haxall.io/",
+        "hx.vcs.type": "git",
+        "hx.vcs.uri": "https://github.com/haxall/haxall",
+        "hx.version": "4.0.6"
+      },
+      "libraries": [
+        "axon",
+        "hx",
+        "hx.api",
+        "hx.axonsh",
+        "hx.comps",
+        "hx.conn",
+        "hx.crypto",
+        "hx.doc.haxall",
+        "hx.docker",
+        "hx.ecobee",
+        "hx.energystar",
+        "hx.file",
+        "hx.haystack",
+        "hx.http",
+        "hx.hxd.his",
+        "hx.hxd.proj",
+        "hx.hxd.user",
+        "hx.io",
+        "hx.math",
+        "hx.modbus",
+        "hx.mqtt",
+        "hx.nest",
+        "hx.obix",
+        "hx.obs",
+        "hx.platform",
+        "hx.platform.network",
+        "hx.platform.serial",
+        "hx.platform.time",
+        "hx.point",
+        "hx.py",
+        "hx.repo",
+        "hx.sedona",
+        "hx.session",
+        "hx.shell",
+        "hx.sql",
+        "hx.task",
+        "hx.xeto",
+        "hx.xml"
+      ]
+    },
+    {
+      "id": "xeto",
+      "model": "specs",
+      "version": "5.0.0",
+      "repository": "https://github.com/Project-Haystack/xeto",
+      "revision": "deb813507b8255d2159db81c5caf9b0ef0ad102e",
+      "asset_prefix": "xeto/5.0.0",
+      "license": "AFL-3.0",
+      "build_properties": {
+        "ph.depend": "5.0.0",
+        "ph.license": "AFL-3.0",
+        "ph.maturity": "alpha",
+        "ph.org.dis": "Project Haystack",
+        "ph.org.uri": "https://project-haystack.org/",
+        "ph.vcs.type": "git",
+        "ph.vcs.uri": "https://github.com/Project-Haystack/xeto.git",
+        "ph.version": "5.0.0"
+      },
+      "libraries": [
+        "ashrae.g36",
+        "doc.xeto",
+        "doc.xeto.tools",
+        "doc.xeto.tutorials",
+        "ph",
+        "ph.api",
+        "ph.attrs",
+        "ph.doc",
+        "ph.elec",
+        "ph.equips.sugar",
+        "ph.examples",
+        "ph.points",
+        "ph.points.sugar",
+        "ph.protocols",
+        "sys",
+        "sys.api",
+        "sys.comp",
+        "sys.files",
+        "sys.rdf",
+        "sys.refs",
+        "sys.repo",
+        "sys.template"
+      ]
+    }
+  ],
+  "artifacts_sha256": {
+    "coreFuncs.trio": "2ae27c47f808eb38bbda1145ec7b3dce458f01b1ddb61a8cbb085e06f8b9b09b",
+    "function_cache.json": "63bf49fa6cdc35793c90f06b7531c4febfe60760ec62411d796eb585916d32f2",
+    "xeto_sources.json": "f31e4327e7c2e68a9d2cf2482075c08bda29e5f1b81ed823e42b14ec60049853"
+  }
+}

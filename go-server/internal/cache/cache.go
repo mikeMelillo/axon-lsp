@@ -3,10 +3,13 @@ package cache
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
+	"sync"
 )
 
 const EmbeddedCoreURI = "axon-ext:/coreFuncs.trio"
+const EmbeddedBaselineURI = "axon-ext:/cache_manifest.json"
 
 type serializedLocation struct {
 	URI   string           `json:"uri"`
@@ -44,16 +47,29 @@ type serializedCache struct {
 	Functions map[string][]serializedVariant `json:"functions"`
 }
 
-func XetoSource(uri string) (string, bool) {
+// Decode the source bundle once, rather than reparsing every source document
+// and its metadata whenever an editor opens one virtual document.
+var bundledXetoSources = sync.OnceValues(func() (map[string]string, error) {
 	var sources map[string]string
 	if err := json.Unmarshal(EmbeddedXetoSources, &sources); err != nil {
+		return nil, err
+	}
+	return sources, nil
+})
+
+func XetoSource(uri string) (string, bool) {
+	parsed, err := url.Parse(uri)
+	if err != nil || parsed.Scheme != "axon-ext" || parsed.Host != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "", false
 	}
-	const prefix = "axon-ext:/"
-	if !strings.HasPrefix(uri, prefix) {
+	if parsed.Path == "/cache_manifest.json" {
+		return string(EmbeddedBaselineManifest), true
+	}
+	sources, err := bundledXetoSources()
+	if err != nil {
 		return "", false
 	}
-	content, ok := sources[strings.TrimPrefix(uri, prefix)]
+	content, ok := sources[strings.TrimPrefix(parsed.Path, "/")]
 	return content, ok
 }
 

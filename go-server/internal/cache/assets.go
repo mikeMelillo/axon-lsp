@@ -11,4 +11,7 @@ var (
 
 	//go:embed assets/xeto_sources.json
 	EmbeddedXetoSources []byte
+
+	//go:embed assets/cache_manifest.json
+	EmbeddedBaselineManifest []byte
 )

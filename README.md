@@ -133,6 +133,14 @@ The current parser/indexer supports:
 
 The extension keeps a compact cached backstop rather than shipping the full Haxall source tree, which keeps installs smaller and startup more predictable.
 
+The bundled source baseline also includes Project Haystack's separate Xeto 5.0.0
+standard libraries (`sys`, `ph`, and related libraries), their build properties,
+and license texts. This makes the missing type definitions available; it does
+not yet add inheritance-aware hints or structural validation. Maintainers can
+regenerate the pinned baseline with `npm run build:cache` and verify it without
+writing files with `npm run check:cache`. See [cache baseline documentation](docs/cache-baseline.md)
+and [third-party notices](THIRD_PARTY_NOTICES.md).
+
 ## Understanding the Project
 
 Axon is the language this extension analyzes, but it is usually written inside

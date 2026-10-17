@@ -1,9 +1,9 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,13 +15,22 @@ import (
 )
 
 type sourceDescriptor struct {
-	ID           string
-	Kind         string
-	Model        string
-	Version      string
-	Root         string
-	GitHubBase   string
-	CoreTrioFile string
+	ID            string
+	Kind          string
+	Model         string
+	Version       string
+	Root          string
+	GitHubBase    string
+	CoreTrioFile  string
+	Repository    string
+	Revision      string
+	AssetPrefix   string
+	License       string
+	LicenseFile   string
+	PropertyFiles []string
+	Properties    map[string]string
+	files         []string
+	blobs         map[string]string
 }
 
 type location struct {
@@ -60,128 +69,79 @@ type serializedCache struct {
 
 func main() {
 	root := flag.String("root", ".", "repository root")
+	check := flag.Bool("check", false, "verify generated assets without writing files")
 	flag.Parse()
-
-	repoRoot, err := filepath.Abs(*root)
-	if err != nil {
-		panic(err)
+	if err := buildCache(*root, *check); err != nil {
+		fmt.Fprintln(os.Stderr, "cache-builder:", err)
+		os.Exit(1)
 	}
-	coreSource := filepath.Join(repoRoot, "cache_sources", "coreFuncs.trio")
-	assetJSON := filepath.Join(repoRoot, "go-server", "internal", "cache", "assets", "function_cache.json")
-	assetCore := filepath.Join(repoRoot, "go-server", "internal", "cache", "assets", "coreFuncs.trio")
-	assetXeto := filepath.Join(repoRoot, "go-server", "internal", "cache", "assets", "xeto_sources.json")
-	haxall31Root := filepath.Join(repoRoot, "cache_sources", "haxall-3.1.12")
-	haxall40Root := filepath.Join(repoRoot, "cache_sources", "haxall-4.0.6")
-
-	sources := []sourceDescriptor{
-		{
-			ID:           "coreDefs",
-			Kind:         "core",
-			Model:        "defs",
-			Version:      "3.1.12",
-			Root:         filepath.Join(repoRoot, "cache_sources"),
-			CoreTrioFile: coreSource,
-		},
-		{
-			ID:         "haxall31",
-			Kind:       "haxall",
-			Model:      "defs",
-			Version:    "3.1.12",
-			Root:       haxall31Root,
-			GitHubBase: envOrDefault("GITHUB_BASE_3", "https://github.com/haxall/haxall/blob/ec4ab0bae96ed840d0888be2164fe672cdee8781"),
-		},
-		{
-			ID:         "haxall40",
-			Kind:       "haxall",
-			Model:      "specs",
-			Version:    "4.0.6",
-			Root:       haxall40Root,
-			GitHubBase: envOrDefault("GITHUB_BASE_4", "https://github.com/haxall/haxall/blob/b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f"),
-		},
-	}
-
-	functions := map[string][]serializedVariant{}
-	xetoSources := map[string]string{}
-	for _, source := range sources {
-		if source.CoreTrioFile == "" {
-			if info, err := os.Stat(source.Root); err != nil || !info.IsDir() {
-				panic(fmt.Sprintf("required cache source is missing: %s", source.Root))
-			}
-		}
-		collectSource(functions, xetoSources, source)
-	}
-	sortCache(functions)
-	data, err := json.MarshalIndent(serializedCache{Functions: functions}, "", "  ")
-	if err != nil {
-		panic(err)
-	}
-	if err := os.WriteFile(assetJSON, data, 0o644); err != nil {
-		panic(err)
-	}
-	coreData, err := os.ReadFile(coreSource)
-	if err != nil {
-		panic(err)
-	}
-	if err := os.WriteFile(assetCore, coreData, 0o644); err != nil {
-		panic(err)
-	}
-	xetoData, err := json.MarshalIndent(xetoSources, "", "  ")
-	if err != nil {
-		panic(err)
-	}
-	if err := os.WriteFile(assetXeto, xetoData, 0o644); err != nil {
-		panic(err)
-	}
-	count := 0
-	for _, variants := range functions {
-		count += len(variants)
-	}
-	fmt.Printf("Wrote %d variants across %d function names\n", count, len(functions))
 }
 
-func collectSource(functions map[string][]serializedVariant, xetoSources map[string]string, source sourceDescriptor) {
+func collectSource(functions map[string][]serializedVariant, xetoSources map[string]string, source sourceDescriptor) error {
 	if source.CoreTrioFile != "" {
-		for _, fn := range trio.ParseFile(source.CoreTrioFile) {
+		content, err := readSourceFile(source.CoreTrioFile)
+		if err != nil {
+			return err
+		}
+		for _, fn := range trio.ParseURIContent(fileURI(source.CoreTrioFile), string(content)) {
 			functions[fn.Name] = append(functions[fn.Name], serializeTrio(fn, source))
 		}
-		return
+		return nil
 	}
-	info, err := os.Stat(source.Root)
-	if err != nil || !info.IsDir() {
-		return
-	}
-	_ = filepath.WalkDir(source.Root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d == nil || d.IsDir() {
-			return nil
+	for _, rel := range source.files {
+		if !strings.HasPrefix(rel, "src/") {
+			continue
 		}
+		path := filepath.Join(source.Root, filepath.FromSlash(rel))
 		switch {
 		case strings.HasSuffix(path, ".trio"):
-			for _, fn := range trio.ParseFile(path) {
+			content, err := source.readFile(rel)
+			if err != nil {
+				return err
+			}
+			for _, fn := range trio.ParseURIContent(fileURI(path), string(content)) {
 				functions[fn.Name] = append(functions[fn.Name], serializeTrio(fn, source))
 			}
-		case strings.HasSuffix(path, ".fan") && source.ID != "haxall40":
-			for _, fn := range fantom.ParseFile(path) {
+		case strings.HasSuffix(path, ".fan") && source.Model == "defs":
+			content, err := source.readFile(rel)
+			if err != nil {
+				return err
+			}
+			for _, fn := range fantom.ParseURIContent(fileURI(path), string(content)) {
 				functions[fn.Name] = append(functions[fn.Name], serializeFantom(fn, source))
 			}
-		case strings.HasSuffix(path, ".xeto") && !isTestXeto(path):
-			if content, readErr := os.ReadFile(path); readErr == nil {
-				xetoSources[xetoAssetPath(path, source)] = string(content)
+		case strings.HasPrefix(rel, "src/xeto/") && strings.HasSuffix(path, ".xeto") && !isTestXeto(rel):
+			content, err := source.readFile(rel)
+			if err != nil {
+				return err
 			}
-			for _, fn := range xeto.ParseFile(path) {
+			xetoSources[xetoAssetPath(path, source)] = string(content)
+			for _, fn := range xeto.ParseURIContent(fileURI(path), string(content)) {
 				functions[fn.Name] = append(functions[fn.Name], serializeXeto(fn, source))
 			}
 		}
-		return nil
-	})
+	}
+	for _, rel := range append(append([]string{}, source.PropertyFiles...), source.LicenseFile) {
+		if rel == "" {
+			continue
+		}
+		content, err := source.readFile(rel)
+		if err != nil {
+			return err
+		}
+		asset := source.AssetPrefix + "/" + strings.TrimPrefix(rel, "src/xeto/")
+		xetoSources[asset] = string(content)
+	}
+	return nil
 }
 
 func xetoAssetPath(path string, source sourceDescriptor) string {
 	root := filepath.Join(source.Root, "src", "xeto")
 	rel, err := filepath.Rel(root, path)
-	if err != nil {
-		return filepath.Base(path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		panic(fmt.Sprintf("Xeto source %q is outside source root %q", path, root))
 	}
-	return "haxall/" + source.Version + "/" + filepath.ToSlash(rel)
+	return source.AssetPrefix + "/" + filepath.ToSlash(rel)
 }
 
 func isTestXeto(path string) bool {
@@ -242,13 +202,9 @@ func serializeXeto(fn xeto.ParsedFunction, source sourceDescriptor) serializedVa
 }
 
 func serializeXetoLocation(uri string, startLine, startChar, endLine, endChar int, source sourceDescriptor) *location {
-	path := filepath.ToSlash(uri)
-	if idx := strings.Index(path, "/cache_sources/"); idx >= 0 {
-		path = strings.TrimPrefix(path[idx+len("/cache_sources/"):], "haxall-"+source.Version+"/")
-	}
-	if source.GitHubBase != "" {
-		rel := strings.TrimPrefix(path, "src/xeto/")
-		return &location{URI: "axon-ext:/haxall/" + source.Version + "/" + rel, Range: &struct {
+	if source.AssetPrefix != "" {
+		asset := xetoAssetPath(pathFromFileURI(uri), source)
+		return &location{URI: (&url.URL{Scheme: "axon-ext", OmitHost: true, Path: "/" + asset}).String(), Range: &struct {
 			Start position `json:"start"`
 			End   position `json:"end"`
 		}{Start: position{Line: startLine, Character: startChar}, End: position{Line: endLine, Character: endChar}}}
@@ -302,17 +258,14 @@ func serializeLocationWithRange(uri string, startLine, startChar, endLine, endCh
 	return nil
 }
 
-func envOrDefault(name, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
-		return value
-	}
-	return fallback
-}
-
 func pathFromFileURI(uri string) string {
 	path := strings.TrimPrefix(uri, "file://")
 	if len(path) >= 3 && path[0] == '/' && path[2] == ':' {
 		path = path[1:]
 	}
 	return filepath.FromSlash(path)
+}
+
+func fileURI(path string) string {
+	return "file://" + filepath.ToSlash(path)
 }

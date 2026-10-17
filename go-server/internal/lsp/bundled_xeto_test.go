@@ -143,3 +143,29 @@ func TestIgnoreBundledXetoCacheConfiguration(t *testing.T) {
 		})
 	}
 }
+
+func TestStandardLibraryAndBaselineEmbeddedDocuments(t *testing.T) {
+	// No index or source checkout is needed to serve the shipped source bundle.
+	for _, uri := range []string{"axon-ext:/xeto/5.0.0/sys/types.xeto", cache.EmbeddedBaselineURI} {
+		t.Run(uri, func(t *testing.T) {
+			out := &bytes.Buffer{}
+			s := NewServer(bytes.NewReader(nil), out)
+			params, _ := json.Marshal(embeddedDocumentParams{URI: uri})
+			if err := s.handle(requestMessage{ID: json.RawMessage("1"), Method: "axonLsp/embeddedDocument", Params: params}); err != nil {
+				t.Fatal(err)
+			}
+			reader := NewServer(bytes.NewReader(out.Bytes()), io.Discard)
+			payload, err := reader.readMessage()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var response struct {
+				Result string `json:"result"`
+			}
+			want, ok := cache.XetoSource(uri)
+			if err := json.Unmarshal(payload, &response); err != nil || !ok || response.Result != want || want == "" {
+				t.Fatalf("embedded document unavailable: %s", payload)
+			}
+		})
+	}
+}

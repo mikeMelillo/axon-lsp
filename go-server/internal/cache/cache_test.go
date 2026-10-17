@@ -1,7 +1,9 @@
 package cache
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -93,6 +95,74 @@ func TestBundledXetoSourceIsAvailable(t *testing.T) {
 	content, ok := XetoSource("axon-ext:/haxall/4.0.6/axon/funcs.xeto")
 	if !ok || !strings.Contains(content, "+Funcs") {
 		t.Fatalf("expected bundled Xeto source, ok=%t", ok)
+	}
+}
+
+func TestBundledStandardLibrarySources(t *testing.T) {
+	for _, test := range []struct{ path, contains string }{
+		{"sys/types.xeto", "Scalar: Obj"},
+		{"ph/lib.xeto", `lib: "sys.refs"`},
+		{"sys.refs/lib.xeto", "pragma: Lib"},
+		{"xeto-build.props", "ph.version=5.0.0"},
+		{"LICENSE", "Academic Free License"},
+	} {
+		t.Run(test.path, func(t *testing.T) {
+			content, ok := XetoSource("axon-ext:/xeto/5.0.0/" + test.path)
+			if !ok || !strings.Contains(content, test.contains) {
+				t.Fatalf("missing standard-library source or metadata: %s", test.path)
+			}
+		})
+	}
+}
+
+func TestEmbeddedBaselineIntegrity(t *testing.T) {
+	var manifest struct {
+		SchemaVersion int `json:"schema_version"`
+		Sources       []struct {
+			ID          string            `json:"id"`
+			Revision    string            `json:"revision"`
+			AssetPrefix string            `json:"asset_prefix"`
+			Properties  map[string]string `json:"build_properties"`
+			Libraries   []string          `json:"libraries"`
+		} `json:"sources"`
+		Artifacts map[string]string `json:"artifacts_sha256"`
+	}
+	if err := json.Unmarshal(EmbeddedBaselineManifest, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.SchemaVersion != 1 || len(manifest.Sources) != 4 {
+		t.Fatalf("missing baseline provenance: %#v", manifest)
+	}
+	for name, data := range map[string][]byte{"function_cache.json": EmbeddedFunctionCache, "coreFuncs.trio": EmbeddedCoreFuncs, "xeto_sources.json": EmbeddedXetoSources} {
+		if got := fmt.Sprintf("%x", sha256.Sum256(data)); manifest.Artifacts[name] != got {
+			t.Errorf("asset %s does not match its baseline checksum", name)
+		}
+	}
+	found := false
+	for _, source := range manifest.Sources {
+		if source.ID != "xeto" {
+			continue
+		}
+		found = true
+		if len(source.Revision) != 40 || source.AssetPrefix != "xeto/5.0.0" || source.Properties["ph.version"] != "5.0.0" || source.Properties["ph.maturity"] != "alpha" || len(source.Libraries) != 22 {
+			t.Fatalf("incomplete standard-library baseline: %#v", source)
+		}
+		for _, library := range source.Libraries {
+			if _, ok := XetoSource("axon-ext:/" + source.AssetPrefix + "/" + library + "/lib.xeto"); !ok {
+				t.Errorf("missing manifest source for %s", library)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("standard-library source provenance is absent")
+	}
+	if _, ok := XetoSource("axon-ext:/xeto/5.0.0/%73ys/types.xeto"); !ok {
+		t.Fatal("equivalent URI escaping must resolve the same source")
+	}
+	for _, uri := range []string{"file:///xeto/5.0.0/sys/types.xeto", "axon-ext://xeto/5.0.0/sys/types.xeto", "axon-ext:/xeto/5.0.0/sys/types.xeto?other", "axon-ext:/xeto/5.0.0/sys/types.xeto#fragment"} {
+		if _, ok := XetoSource(uri); ok {
+			t.Errorf("invalid virtual source URI accepted: %s", uri)
+		}
 	}
 }
 

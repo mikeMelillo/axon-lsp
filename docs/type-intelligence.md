@@ -13,6 +13,10 @@ specification. Future work and review decisions live in the
 - Legacy metadata comes from `coreFuncs.trio` and Haxall 3.1.12 sources. Modern
   bundled signatures come from Haxall 4.0.6 Xeto at commit
   `b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f`.
+- The [cache baseline](cache-baseline.md) now also includes the separate Project
+  Haystack Xeto 5.0.0 standard-library sources, build properties, and provenance.
+  This fills the missing `sys`/`ph` source inputs; it does not implement a base-type
+  graph or change inheritance-based compatibility yet.
 - Xeto requests prefer modern bundled signatures; other selection paths follow
   the configured metadata mode. Excluding bundled Xeto metadata retains legacy
   defs and indexed workspace/external/archive sources.

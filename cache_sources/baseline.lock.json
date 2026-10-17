@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "coreDefs",
+      "kind": "core",
+      "model": "defs",
+      "version": "3.1.12",
+      "path": "coreFuncs.trio"
+    },
+    {
+      "id": "haxall31",
+      "kind": "haxall",
+      "model": "defs",
+      "version": "3.1.12",
+      "path": "haxall-3.1.12",
+      "repository": "https://github.com/haxall/haxall",
+      "revision": "ec4ab0bae96ed840d0888be2164fe672cdee8781",
+      "asset_prefix": "haxall/3.1.12",
+      "license": "AFL-3.0",
+      "license_file": "LICENSE"
+    },
+    {
+      "id": "haxall40",
+      "kind": "haxall",
+      "model": "specs",
+      "version": "4.0.6",
+      "path": "haxall-4.0.6",
+      "repository": "https://github.com/haxall/haxall",
+      "revision": "b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f",
+      "asset_prefix": "haxall/4.0.6",
+      "license": "AFL-3.0",
+      "license_file": "LICENSE",
+      "property_files": ["src/xeto/build.props"],
+      "version_property": "hx.version",
+      "required_files": ["src/xeto/axon/funcs.xeto"]
+    },
+    {
+      "id": "xeto",
+      "kind": "core",
+      "model": "specs",
+      "version": "5.0.0",
+      "path": "xeto",
+      "repository": "https://github.com/Project-Haystack/xeto",
+      "revision": "deb813507b8255d2159db81c5caf9b0ef0ad102e",
+      "asset_prefix": "xeto/5.0.0",
+      "license": "AFL-3.0",
+      "license_file": "LICENSE",
+      "property_files": ["src/xeto/xeto-build.props"],
+      "version_property": "ph.version",
+      "required_files": [
+        "src/xeto/sys/lib.xeto",
+        "src/xeto/sys/types.xeto",
+        "src/xeto/sys.refs/lib.xeto",
+        "src/xeto/ph/lib.xeto",
+        "src/xeto/ph.points/lib.xeto"
+      ]
+    }
+  ]
+}

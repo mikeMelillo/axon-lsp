@@ -119,6 +119,7 @@
     "build:server": "node ./scripts/build-go.mjs",
     "build:server:dev": "node ./scripts/build-go.mjs --host",
     "build:cache": "node ./scripts/build-cache.mjs",
+    "check:cache": "node ./scripts/build-cache.mjs --check",
     "test:go": "sh -c 'cd go-server && go test ./...'",
     "test:client": "node --test client/watcher.test.cjs",
     "bench:go": "sh -c 'cd go-server && go test -run ^$ -bench . -benchmem ./internal/index'",
