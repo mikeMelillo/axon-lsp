@@ -21,9 +21,10 @@ type Binding struct {
 	EndLine    int
 	Parameter  bool
 
-	scope   int
-	visible axon.Position
-	until   *axon.Position
+	scope       int
+	visible     axon.Position
+	until       *axon.Position
+	initializer axon.Expr
 }
 
 type lexicalScope struct {
@@ -34,6 +35,7 @@ type lexicalScope struct {
 type assignment struct {
 	name     string
 	position axon.Position
+	value    axon.Expr
 }
 
 type Model struct {
@@ -86,10 +88,10 @@ func Analyze(source string, parameters map[string]string) *Model {
 						Name: name.Name, Expression: source[span.StartOffset:span.EndOffset],
 						Line: name.Source.Start.Line, Column: name.Source.Start.Character,
 						StartLine: span.End.Line, EndLine: m.scopes[scopeID].span.End.Line,
-						scope: scopeID, visible: span.End,
+						scope: scopeID, visible: span.End, initializer: binary.Right,
 					})
 				case "=":
-					m.assignments = append(m.assignments, assignment{name: name.Name, position: name.Source.Start})
+					m.assignments = append(m.assignments, assignment{name: name.Name, position: name.Source.Start, value: binary.Right})
 				}
 			}
 		}

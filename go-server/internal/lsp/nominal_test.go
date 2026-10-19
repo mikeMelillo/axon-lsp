@@ -12,8 +12,7 @@ import (
 )
 
 func TestNominalCompletionDirectionsAndTypedDiagnostics(t *testing.T) {
-	out := &bytes.Buffer{}
-	s := NewServer(bytes.NewReader(nil), out)
+	s := NewServer(bytes.NewReader(nil), &bytes.Buffer{})
 	m, err := index.NewManager()
 	if err != nil {
 		t.Fatal(err)
@@ -50,27 +49,7 @@ Child: Base
 		doc = strings.Replace(doc, "@cursor@", "", 1)
 		s.setDocument(uri, doc)
 		m.UpdateDocument(uri, doc)
-		out.Reset()
-		params, _ := json.Marshal(completionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: position})
-		if err := s.handle(requestMessage{ID: json.RawMessage("1"), Method: "textDocument/completion", Params: params}); err != nil {
-			t.Fatal(err)
-		}
-		reader := NewServer(bytes.NewReader(out.Bytes()), io.Discard)
-		payload, err := reader.readMessage()
-		if err != nil {
-			t.Fatal(err)
-		}
-		var response struct {
-			Result index.CompletionList `json:"result"`
-		}
-		if err := json.Unmarshal(payload, &response); err != nil {
-			t.Fatal(err)
-		}
-		items := map[string]index.CompletionItem{}
-		for _, item := range response.Result.Items {
-			items[item.Label] = item
-		}
-		return items
+		return requestCompletionItems(t, s, uri, position)
 	}
 	assertRank := func(items map[string]index.CompletionItem, promoted bool, names ...string) {
 		t.Helper()
@@ -129,4 +108,33 @@ Child: Base
 	if len(diagnostics) != 1 || diagnostics[0].Message != "Argument value expects Number; received Str" || diagnostics[0].Range.Start.Line != strings.Count(prefix, "\n")+2 {
 		t.Fatalf("owner input types/nominal argument diagnostics disagree or lost host mapping: %#v", diagnostics)
 	}
+}
+
+func requestCompletionItems(t *testing.T, s *Server, uri string, position index.Position) map[string]index.CompletionItem {
+	t.Helper()
+	out := &bytes.Buffer{}
+	s.writer = out
+	params, _ := json.Marshal(completionParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: position})
+	if err := s.handle(requestMessage{ID: json.RawMessage("1"), Method: "textDocument/completion", Params: params}); err != nil {
+		t.Fatal(err)
+	}
+	reader := NewServer(bytes.NewReader(out.Bytes()), io.Discard)
+	payload, err := reader.readMessage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result index.CompletionList `json:"result"`
+	}
+	if err := json.Unmarshal(payload, &response); err != nil {
+		t.Fatal(err)
+	}
+	items := map[string]index.CompletionItem{}
+	for _, item := range response.Result.Items {
+		if _, duplicate := items[item.Label]; duplicate {
+			t.Errorf("duplicate completion label: %s", item.Label)
+		}
+		items[item.Label] = item
+	}
+	return items
 }

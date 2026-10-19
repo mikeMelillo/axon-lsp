@@ -353,7 +353,7 @@ func (m *Manager) BuildHoverForURI(funcName, uri string) *Hover {
 	if !ok {
 		return nil
 	}
-	sections := []string{"```axon\n" + detailFor(symbol) + "\n```"}
+	sections := []string{"**" + symbol.Name + "**: `Func`", "```axon\n" + detailFor(symbol) + "\n```"}
 	if source := sourceLabel(symbol); source != "" {
 		sections = append(sections, "Source: `"+source+"`")
 	}
@@ -439,25 +439,7 @@ func (m *Manager) BuildSignatureHelpForURI(funcName, uri string) *SignatureHelp 
 	if !ok {
 		return nil
 	}
-	params := []ParameterInformation{}
-	trimmed := strings.Trim(strings.TrimSpace(symbol.ArgsStr), "()")
-	if trimmed != "" {
-		for _, part := range strings.Split(trimmed, ",") {
-			part = strings.TrimSpace(part)
-			if part != "" {
-				params = append(params, ParameterInformation{Label: part})
-			}
-		}
-	}
-	return &SignatureHelp{
-		Signatures: []SignatureInformation{{
-			Label:         symbol.Name + symbol.ArgsStr,
-			Documentation: normalizedDoc(symbol.Doc),
-			Parameters:    params,
-		}},
-		ActiveSignature: 0,
-		ActiveParameter: 0,
-	}
+	return SignatureHelpForSymbol(symbol)
 }
 
 func normalizedDoc(doc string) string {

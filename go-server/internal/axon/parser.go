@@ -293,6 +293,17 @@ func (p *expressionParser) parseExpression(minPrecedence int) Expr {
 		return nil
 	}
 	for {
+		// A leading dot continues the preceding receiver across a line break.
+		// Do not recover it as a standalone call with the lambda in slot zero.
+		if p.atKind(TokenNewline) {
+			next := p.index
+			for next < len(p.tokens) && p.tokens[next].Kind == TokenNewline {
+				next++
+			}
+			if next < len(p.tokens) && p.tokens[next].Kind == TokenOperator && p.tokens[next].Text == "." {
+				p.index = next
+			}
+		}
 		if p.atKind(TokenNewline) || p.at(TokenEOF, "") || p.at(TokenOperator, ";") ||
 			p.at(TokenOperator, ",") || p.at(TokenOperator, ")") || p.at(TokenOperator, "]") ||
 			p.at(TokenOperator, "}") || p.atStop(map[string]bool{"else": true, "end": true, "catch": true}) {
@@ -598,6 +609,7 @@ func (p *expressionParser) parseIf() Expr {
 		p.addError("expected if branch", p.current(), p.current())
 		return nil
 	}
+	branchEnd := p.index
 	p.skipNewlines()
 	var elseExpr Expr
 	if p.at(TokenKeyword, "else") {
@@ -607,6 +619,11 @@ func (p *expressionParser) parseIf() Expr {
 		if elseExpr == nil {
 			p.addError("expected else branch", p.current(), p.current())
 		}
+	} else {
+		// Newlines belong to the enclosing statement sequence unless they
+		// actually connect this branch to an else. Consuming them otherwise
+		// makes recovery discard the next statement's first token/name.
+		p.index = branchEnd
 	}
 	end := thenExpr.Span()
 	if elseExpr != nil {
@@ -617,6 +634,50 @@ func (p *expressionParser) parseIf() Expr {
 
 func (p *expressionParser) parseTry() Expr {
 	start := spanOf(p.consume())
+	if p.atKind(TokenNewline) {
+		p.skipNewlines()
+		if !p.at(TokenKeyword, "do") {
+			return p.parseLegacyTry(start)
+		}
+	}
+	body := p.parseBranch()
+	if body == nil {
+		p.addError("expected try body", p.current(), p.current())
+		return nil
+	}
+	p.skipNewlines()
+	if !p.at(TokenKeyword, "catch") {
+		p.addError("expected 'catch' for try expression", p.current(), p.current())
+		return &TryExpr{Body: body, Source: mergeSpan(start, body.Span())}
+	}
+	p.consume()
+	p.skipNewlines()
+	var catchName string
+	if p.at(TokenOperator, "(") && p.index+2 < len(p.tokens) &&
+		(p.tokens[p.index+1].Kind == TokenIdentifier || p.tokens[p.index+1].Kind == TokenTypeName) && p.tokens[p.index+2].Text == ")" {
+		p.consume()
+		catchName = p.consume().Text
+		p.consume()
+		p.skipNewlines()
+	} else if (p.current().Kind == TokenIdentifier || p.current().Kind == TokenTypeName) && p.index+1 < len(p.tokens) &&
+		(p.tokens[p.index+1].Kind == TokenNewline || p.tokens[p.index+1].Text == "do") {
+		// Retain the editor's unparenthesized catch-name compatibility form.
+		catchName = p.consume().Text
+		p.skipNewlines()
+	}
+	catchExpr := p.parseBranch()
+	end := body.Span()
+	if catchExpr == nil {
+		p.addError("expected catch body", p.current(), p.current())
+	} else {
+		end = catchExpr.Span()
+	}
+	// Each do block owns its end; try/catch itself has no extra closing end.
+	return &TryExpr{Body: body, CatchName: catchName, Catch: catchExpr, Source: mergeSpan(start, end)}
+}
+
+// Preserve the older editor-supported bare multiline try ... catch ... end form.
+func (p *expressionParser) parseLegacyTry(start SourceSpan) Expr {
 	bodyExpressions := p.parseSequence(map[string]bool{"catch": true, "end": true})
 	if len(bodyExpressions) == 0 {
 		p.addError("expected try body", p.current(), p.current())
@@ -674,7 +735,7 @@ func (p *expressionParser) parseBlock() Expr {
 	end := p.current()
 	if p.at(TokenKeyword, "end") {
 		end = p.consume()
-	} else {
+	} else if !p.at(TokenKeyword, "catch") && !p.at(TokenKeyword, "else") {
 		p.addError("expected 'end' for block", end, end)
 	}
 	return &SequenceExpr{Expressions: expressions, Source: mergeSpan(spanOf(open), spanOf(end))}

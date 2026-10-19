@@ -1,6 +1,7 @@
 # Analysis Foundation: Recovery, Resolution, and Syntax Diagnostics
 
-Status: **draft for review; no implementation authorized by this document**.
+Status: **broader F1–F3 plan remains draft for review; a user-authorized
+callback/signature correctness subset is implemented and recorded below**.
 
 Analysis date: 2026-10-16. Repository baseline: `e814e54` (0.4.3).
 Companion: [type-model evolution](type-model-evolution.md).
@@ -25,6 +26,57 @@ Xeto fitting, a complete compiler, formatting, or a new archive watcher system.
 Recommended order: coordinate/region contracts -> valid grammar and local
 recovery -> shared binding/occurrence resolution -> consumer migration -> a
 small syntax-diagnostic release. Avoid a flag-day rewrite.
+
+## 1a. Implemented correctness subset
+
+Current 0.4.4 build, updated 2026-10-18. This is a delivery record, not approval
+of the remaining F1–F3 scope:
+
+- Callable values: indexed function names and inline lambdas/initializer aliases
+  are `Func`, independently of their invocation return types. Shared bounded
+  callable recognition preserves shadowing and mutation invalidation. Callback
+  completion and hover consume those facts; bare Filter names stay tag syntax.
+- **R12 fixed:** signature labels now come from `Params`, `ParamTypes`, and
+  `ParamDefaults`. Legacy display-only signatures use lexical string handling
+  and balanced expression delimiters. The parsed-Xeto-owner fallback uses the
+  same builder; nested/quoted commas no longer create phantom parameter entries.
+- **R2/F2 signature subset fixed:** resolve the callee occurrence through the
+  scope model before using global signature metadata. Local lambdas, parameters,
+  aliases, and mutated bindings return no signature rather than an unrelated
+  global contract. Callee positions, not later argument scopes, decide shadowing.
+- Signature help now uses the whole containing Trio source record, masking the
+  `src:` label without shifting columns. Inline source and multiline calls are
+  covered, with records isolated. Bare-name fallback no longer scans earlier
+  unrelated identifiers or quoted/trap-key text for a substitute signature.
+- Focused F1 follow-up: supported expression/block `try/catch` no longer consumes
+  the containing lambda's `end`. Explicit/omitted try-body block terminators and
+  parenthesized catch binders have regression coverage; the legacy bare multiline
+  try form is retained. Chained initializer bindings and subsequent statements
+  survive. This does not change catch-variable lifetime policy.
+- Leading-dot multiline member continuations retain their receivers, preventing
+  a `.map` lambda from being misclassified as the first/List argument. Shared
+  indexed hover supplies the `Func` annotation to both Trio and Xeto paths.
+- A documentation-guided accumulator follow-up shares a bounded List-invariant
+  proof across diagnostics and Xeto hover/completion. A literal-backed seed and
+  List-preserving writes (including selected built-in `add`) keep captured
+  `results` variables typed inside/after callbacks. Unknown writes and custom or
+  shadowed functions invalidate the proof; no callback is executed. This is not
+  the T1 transfer/branch/effect engine; see the type-model plan's delivery note.
+- F1 statement-boundary follow-up: `if` lookahead restores newlines when an
+  optional `else` is absent. Previously recovery discarded the following
+  declaration's name, reproducing undefined `results` uses in the complete
+  `firstPassPipeline` example. AST coverage spans inline/block/nested conditions
+  and actual else branches; the full Xeto fixture retains its `List<of:...>`
+  signature and verifies empty/populated List hover across open/change events.
+  No branch joins or new syntax diagnostics are introduced.
+
+The focused tests cover structured/legacy defaults, active parameters, owner
+fallback, local/global shadowing, nested/lambda scopes, Unicode, and Trio record
+isolation. This does **not** complete R2 across all editor consumers, nor F2's
+shared snapshot/occurrence work. Local callable signature/return inference,
+callback contract checking, higher-order return specialization, declared-return
+validation, and local definition/reference identity remain separate work. No new
+syntax diagnostics, runtime execution, or library/version solver are included.
 
 ## 2. Evidence and baseline
 
@@ -302,6 +354,8 @@ LSP completion/hover/definition/signature handlers, protocol/source-map helpers.
 6. Build signature parameters from `Params`, type/default fields, and parameter
    spans where available. Retain a quote/nesting-aware fallback for legacy
    signatures lacking structured metadata; never split display text naively.
+   **Label/default construction is delivered** by the correctness subset; future
+   work may add declaration spans and richer local-callable signatures.
 7. Replace document references atomically with mapped occurrences. Distinguish
    same-spelled locals/globals and selected global providers; preserve supported
    function-value references without registering literal tags or text content.
@@ -380,5 +434,6 @@ bodies, shadowed function names, and signature help around nested/defaulted call
 5. Include quoted Xeto Axon bodies in A/B, or record them as unsupported and
    deliver escape-aware mapping as its own follow-up slice?
 
-No runtime changes, fixture files, caches, package versions, or release notes
-are part of this planning-only change.
+The remaining proposals do not themselves authorize runtime changes, new
+settings, cache/schema migrations, version bumps, or release claims. The
+implemented correctness subset above is explicitly distinguished from them.

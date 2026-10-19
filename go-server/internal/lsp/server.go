@@ -290,23 +290,45 @@ func (s *Server) handle(msg requestMessage) error {
 				serverLog.Printf("completion xeto hit uri=%s pos=%d:%d fn=%s region=%d:%d inner=%d:%d", params.TextDocument.URI, params.Position.Line, params.Position.Character, embeddedFuncName(fn), region.region.StartLine, region.region.EndLine, inner.Line, inner.Character)
 				completions := s.manager.GetCompletionsForURI(params.TextDocument.URI)
 				if expected, ok := s.expectedCompletionType(params.TextDocument.URI, region, inner, fn); ok {
-					for i := range completions.Items {
+					var variables map[string]typeinfo.Ref
+					functionValueRelation := typeinfo.Unknown
+					if !expected.receiver {
+						variables = s.scopeVariables(params.TextDocument.URI, region, inner, fn)
+						nonNullable := expected.typ
+						nonNullable.Name = strings.TrimSuffix(strings.TrimSpace(nonNullable.Name), "?")
+						if s.manager.TypeRelation(nonNullable, typeinfo.Builtin("Func")) == typeinfo.Compatible {
+							functionValueRelation = s.manager.TypeRelation(typeinfo.Builtin("Func"), expected.typ)
+						}
+					}
+					items := completions.Items[:0]
+					for _, item := range completions.Items {
+						if _, shadowed := variables[item.Label]; shadowed {
+							continue // Offer the lexical value below, not the indexed function.
+						}
 						relation := typeinfo.Unknown
-						if symbol, found := s.manager.FindFunctionForURI(completions.Items[i].Label, params.TextDocument.URI); found {
+						if symbol, found := s.manager.FindFunctionForURI(item.Label, params.TextDocument.URI); found {
 							if expected.receiver && len(symbol.Params) > 0 {
 								relation = s.manager.TypeRelation(expected.typ, symbol.TypeRef(symbol.ParamTypes[symbol.Params[0]]))
 							} else if !expected.receiver {
-								relation = s.manager.TypeRelation(symbol.TypeRef(symbol.ReturnType), expected.typ)
+								// Callback slots accept the function itself. Other slots
+								// retain return-type ranking for potential invocations.
+								if functionValueRelation == typeinfo.Compatible {
+									relation = functionValueRelation
+								} else {
+									relation = s.manager.TypeRelation(symbol.TypeRef(symbol.ReturnType), expected.typ)
+								}
 							}
 						}
 						if relation == typeinfo.Compatible {
-							completions.Items[i].SortText = "0-" + completions.Items[i].Label
+							item.SortText = "0-" + item.Label
 						} else {
-							completions.Items[i].SortText = "1-" + completions.Items[i].Label
+							item.SortText = "1-" + item.Label
 						}
+						items = append(items, item)
 					}
+					completions.Items = items
 					if !expected.receiver {
-						for name, typ := range s.scopeVariables(params.TextDocument.URI, region, inner, fn) {
+						for name, typ := range variables {
 							relation := s.manager.TypeRelation(typ, expected.typ)
 							if relation == typeinfo.Incompatible {
 								continue
@@ -699,7 +721,7 @@ func (s *Server) handleSignatureHelp(msg requestMessage) error {
 	if err := json.Unmarshal(msg.Params, &params); err != nil {
 		return err
 	}
-	line, inComment, ok := s.maskedLineAt(params.TextDocument.URI, params.Position)
+	_, inComment, ok := s.maskedLineAt(params.TextDocument.URI, params.Position)
 	if !ok || inComment {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
@@ -716,18 +738,8 @@ func (s *Server) handleSignatureHelp(msg requestMessage) error {
 	if strings.HasSuffix(pathFromURI(params.TextDocument.URI), ".xeto") {
 		return s.writeResponse(msg.ID, nil, nil)
 	}
-	if context, ok := axon.CallAt(line, axon.Position{Character: params.Position.Character}); ok {
-		if help := s.manager.BuildSignatureHelpForURI(context.Name, params.TextDocument.URI); help != nil {
-			help.ActiveParameter = context.ActiveParameter
-			return s.writeResponse(msg.ID, help, nil)
-		}
-	}
-	for _, match := range resolver.AllWords(line) {
-		if match.End <= params.Position.Character {
-			if help := s.manager.BuildSignatureHelpForURI(match.Word, params.TextDocument.URI); help != nil {
-				return s.writeResponse(msg.ID, help, nil)
-			}
-		}
+	if source, pos, found := s.signatureSource(params.TextDocument.URI, params.Position); found {
+		return s.writeResponse(msg.ID, s.signatureHelpAt(params.TextDocument.URI, source, pos, scope.Analyze(source, nil), nil), nil)
 	}
 	return s.writeResponse(msg.ID, nil, nil)
 }
@@ -911,19 +923,13 @@ func (s *Server) handleEmbeddedHover(uri string, pos index.Position) (*index.Hov
 			return &index.Hover{Contents: index.MarkupContent{Kind: "markdown", Value: fmt.Sprintf("**%s**: `unknown`\n\nScoped variable.", match.Word)}}, true, nil
 		}
 	}
-	return s.manager.BuildHoverForURI(match.Word, uri), true, nil
+	hover := s.manager.BuildHoverForURI(match.Word, uri)
+	return hover, true, nil
 }
 
 func (s *Server) embeddedLocalType(uri string, region embeddedRegionView, lineNumber int, name string, owner *xeto.ParsedFunction) (string, string, bool) {
-	model := embeddedScopeModel(region, owner)
-	binding, ok := model.Resolve(name, lineNumber)
-	if !ok || binding.Parameter || binding.Line < 0 {
-		return "", "", false
-	}
-	if typeName, ok := s.embeddedExpressionType(uri, region, binding.Line, binding.Expression, owner); ok {
-		return typeName, "the expression", true
-	}
-	return "", "", false
+	typ, known := s.embeddedExpressionType(uri, region, lineNumber, name, owner)
+	return typ, "the expression", known
 }
 
 func (s *Server) embeddedExpressionType(uri string, region embeddedRegionView, lineNumber int, expression string, owner *xeto.ParsedFunction) (string, bool) {
@@ -1079,31 +1085,9 @@ func (s *Server) handleEmbeddedSignatureHelp(uri string, pos index.Position) (*i
 	if !ok {
 		return nil, false, nil
 	}
-	line, ok := region.innerLine(innerPos.Line)
-	if !ok {
-		return nil, true, nil
-	}
-	if name, active, found := callAtPosition(region, innerPos); found {
-		if help := s.manager.BuildSignatureHelpForURI(name, uri); help != nil {
-			help.ActiveParameter = active
-			return help, true, nil
-		}
-		if owner != nil && owner.Name == name {
-			params := make([]index.ParameterInformation, 0, len(owner.Params))
-			for _, param := range owner.Params {
-				params = append(params, index.ParameterInformation{Label: param + ": " + owner.ParamTypes[param]})
-			}
-			return &index.SignatureHelp{Signatures: []index.SignatureInformation{{Label: owner.Name + owner.ArgsStr + " -> " + owner.ReturnType, Parameters: params}}, ActiveParameter: active}, true, nil
-		}
-	}
-	for _, match := range resolver.AllWords(line) {
-		if match.End <= innerPos.Character {
-			if help := s.manager.BuildSignatureHelpForURI(match.Word, uri); help != nil {
-				return help, true, nil
-			}
-		}
-	}
-	return nil, true, nil
+	source := strings.Join(region.lines, "\n")
+	help := s.signatureHelpAt(uri, source, axon.Position{Line: innerPos.Line, Character: innerPos.Character}, embeddedScopeModel(region, owner), owner)
+	return help, true, nil
 }
 
 func callAtPosition(region embeddedRegionView, pos index.Position) (string, int, bool) {

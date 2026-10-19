@@ -48,6 +48,19 @@ func (s *Server) nodeRef(uri string, node axon.Expr, pos index.Position, model *
 	if name, known := expressionLiteralType(node); known {
 		return typeinfo.Builtin(name), true
 	}
+	if model.IsListValue(node, axon.Position{Line: pos.Line, Character: pos.Character}, func(name string) bool {
+		return s.manager.IsBuiltinListAddForURI(name, uri)
+	}) {
+		return typeinfo.Builtin("List"), true
+	}
+	if model.IsFunctionValue(node, axon.Position{Line: pos.Line, Character: pos.Character}, func(name string) bool {
+		if _, found := s.manager.FindFunctionForURI(name, uri); found {
+			return true
+		}
+		return owner != nil && owner.Name == name
+	}) {
+		return typeinfo.Builtin("Func"), true
+	}
 	switch value := node.(type) {
 	case *axon.GroupExpr:
 		return s.nodeRef(uri, value.Expression, pos, model, owner, depth+1)

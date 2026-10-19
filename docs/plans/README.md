@@ -9,8 +9,9 @@ are separate proposals for Haxall/Xeto, not local implementation commitments.
 ## Active review plans
 
 Baseline: 0.4.3 plus the pinned cache baseline (`2fc9630`). **T0 is implemented
-in the current working changes.** F1–F3 and T1–T3 remain drafts for review, not
-approved release scopes or claims that those proposed features already exist.
+along with the callback/signature correctness subset for the current 0.4.4 build.**
+Broader F1–F3 and T1–T3 work remains draft for review, not approved release scopes
+or claims that those proposed features already exist.
 
 | ID | Change path | Detailed plan |
 | --- | --- | --- |
@@ -21,6 +22,32 @@ approved release scopes or claims that those proposed features already exist.
 | T1 | Flow-sensitive reassignment inference | [Type-model evolution](type-model-evolution.md) |
 | T2 | Static trap-result typing | [Type-model evolution](type-model-evolution.md) |
 | T3 | Structural conformance and library/version modeling | [Type-model evolution](type-model-evolution.md) |
+
+### Implemented callback/signature subset
+
+The [foundation plan's delivery record](analysis-foundation.md#1a-implemented-correctness-subset)
+separates these fixes from the still-proposed F2 migration:
+
+- Named functions, lambdas, and their initializer aliases carry `Func` facts;
+  invocation return types remain distinct, with callback-aware completion/hover.
+- Signature labels use structured types/defaults, plus a quote/nesting-aware
+  legacy fallback; rendered commas no longer create phantom parameters.
+- Signature help checks the actual callee's lexical binding in Xeto bodies and
+  isolated Trio source records, withholding unrelated globals for local callbacks.
+- Chained lambda initializers retain their bindings across supported `try/catch`
+  bodies; leading-dot continuation lines retain their implicit method receivers.
+  Indexed-function `Func` tooltips are shared across host formats.
+- A bounded List-invariant proof retains literal-backed captured accumulators
+  across built-in `add` assignments when all writes preserve List. Diagnostics
+  and Xeto hover/completion share it; unknown writes remain conservative.
+- Optional-`else` lookahead no longer consumes the next statement boundary when
+  no else exists. The full `firstPassPipeline` regression retains `results: []`
+  after its preceding `if`, including empty/populated List live edits.
+
+Full local signature/result inference, callback signature conformance,
+higher-order return propagation, declared-return checking, and local
+definition/reference identity remain deferred. Do not describe these focused
+fixes as completion of F2 or implementation of general T1/structural fitting.
 
 ### Recommended order
 

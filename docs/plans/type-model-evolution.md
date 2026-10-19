@@ -29,8 +29,8 @@ mapping, recovery confidence, and semantic name identities are prerequisites.
 | --- | --- | --- |
 | Binding model | `scope.Analyze` records initializer text, declaration span data, and assignments as name/position pairs | Cannot evaluate the RHS of a write or distinguish executed writes from deferred closure writes |
 | Mutation handling | `scope.ResolveAt` clears Type/Expression after an earlier source-positioned write resolves to the same binding | Safe loss of precision, not flow analysis; no branch join or call effect model |
-| Editor queries | Embedded hover/type helpers often call line-end `Resolve`; completion scans declarations separately | Fix exact-position/visibility disagreement before adding stronger type claims |
-| Expression types | Diagnostics use literals/global returns/typed owner inputs; LSP has a bounded AST-based initializer evaluator | Nominal compatibility is shared, but full expression inference is not yet shared |
+| Editor queries | Completion enumerates visible bindings; signature help guards the callee's exact position; some hover/type helpers still use line-end `Resolve` | Finish shared occurrence/position resolution before stronger type claims |
+| Expression types | Diagnostics use literals/global returns/typed owner inputs; callable-value recognition is shared with LSP; other initializer inference is still separate | Nominal compatibility and Func facts are shared, not full expression inference |
 | Type representation | Signature fields remain strings; T0 attaches their declaration URI when querying qualified nominal identities | No generic/ref target, union/intersection, or complete shared value-fact model |
 | Null | Semantic literal type is `None`, hover renders `null`, nullable returns suppress definite mismatch claims | Preserve these distinctions in a shared internal model, not separate string conventions |
 | Xeto specs | Coarse `HasSpecName` remains; T0 separately parses simple top-level bases and contextual identities | No effective slots, mixins, structural fitting, or strict versioned namespace |
@@ -41,15 +41,18 @@ mapping, recovery confidence, and semantic name identities are prerequisites.
 
 Relevant Go entry points:
 
-- `internal/scope/scope.go`: `Analyze`, `ResolveAt`, `Resolve`.
-- `internal/diag/validator.go`: `argumentExprType`, `primitiveCompatible`,
-  `optionalType`, and `validateCallsFromAST`.
+- `internal/scope/{scope,function}.go`: `Analyze`, `ResolveAt`, `Resolve`,
+  `IsFunctionValue`.
+- `internal/diag/validator.go`: `argumentExprType`, `optionalType`, and
+  `validateCallsFromAST`; `internal/typeinfo/nominal.go`: shared `Relate`.
 - `internal/lsp/server.go`: `embeddedExpressionType`, `embeddedLocalType`,
   `expectedCompletionType`, `scopeVariables`, and embedded hover/signature paths.
 - `internal/xeto/parser.go`: `ParseURIContent`, `ParseSpecNames`,
   `parseFuncSignature`, and metadata splitting.
 - `internal/index/{types,manager,archive}.go`: identity, selection, spec names,
   provider replacement, and reference storage.
+- `internal/index/signature.go` and `internal/lsp/signature.go`: structured
+  signature labels, bounded legacy fallback, and lexical call-target guards.
 - `internal/cache/cache.go` and `cmd/cache-builder/main.go`: serialized metadata.
 
 ## 3. Common type and identity contract
@@ -130,7 +133,47 @@ flow-sensitive writes, and trap-result typing remain deferred. Completion type
 ranking currently applies to embedded Xeto bodies; this is not a broad Trio
 completion/source-mapping rewrite.
 
+### Callback/signature follow-up delivered with T0
+
+`Func` values (named functions, lambdas, and initializer aliases) are distinct
+from the values returned by calling them. Callback slots rank function values;
+other argument slots retain invocation-return ranking. Scope-aware local hover
+and argument checks use callable facts without executing bodies. Signature help
+uses structured defaults and refuses to borrow same-named global contracts for
+locals, including parameters/aliases/mutated bindings in Xeto and Trio bodies.
+
+This is not callback signature/arity compatibility or local callable invocation
+inference. `ioHttp` remains `Obj?` rather than adopting a callback's `Dict?`, and
+function-body returns are not checked against declared return types. Local
+definition/reference resolution and the broader F2/T1 shared facts work remain
+deferred; signature guards do not establish a complete semantic snapshot.
+
 ## 4. T1: flow-sensitive reassignment inference
+
+### 0.4.4 bounded accumulator fix (delivered separately)
+
+The reported `results: []; recs.each(r => results = results.add(...))` case now
+retains its List category. This is an invariant proof, **not** T1a–T1c: it starts
+from a literal-backed initializer and checks all writes to the exact lexical
+binding, regardless of callback scheduling or source order. List literals,
+groups/aliases, and full calls to the selected pinned built-in `add` are the
+supported List-producing expressions. Unknown/type-changing writes, lexical or
+indexed overrides, partial application, and budget exhaustion do not establish
+an invariant. Declared parameter types are not reinterpreted without qualified
+identity resolution. Diagnostics and Xeto hover/completion consume the same
+proof; no list element type, callback execution, or `each` result specialization
+is inferred.
+
+The [language-review notes](../type-intelligence.md#language-semantics-reviewed-for-this-patch)
+record the architecture/namespace, closure, immutable-list, and dot-call semantics
+checked against upstream documentation and pinned `AxonFuncs.fan` source. Broad
+function returns remain unchanged in the cache. The planned transfers below
+are still needed for changing types, per-position writes, and branch/effect joins.
+
+The full user reproduction additionally exposed an F1 parser bug: optional-else
+lookahead consumed the newline before `results: []` and recovery discarded the
+declaration name. Preserving that boundary fixes the enclosing `if` case without
+changing the List proof or interpreting `List<of:...>` as element-type inference.
 
 ### Target behavior
 

@@ -1,6 +1,6 @@
 # Axon Language Server (axon-lsp)
 
-The extension bundles its Go language server; no separate Python or Haxall runtime is required. Binaries are included for Linux, Windows, and macOS.
+The extension is a bundled language server written in Golang. Binaries are included for Linux, Windows, and macOS.
 
 A VS Code extension that provides Language Server Protocol support for the Axon programming language used in SkySpark and Haxall.
 
@@ -108,9 +108,56 @@ rec->curVal.toStr            // . calls a function with an implicit receiver
 
 Trap expressions support chaining, calls, and indexing. An unresolved Axon receiver is reported, but tag names are not variables or function references. Filter paths such as `readAll(siteRef->dis == "HQ")` retain their tag-path meaning. Trap-result types remain unknown; the server does not resolve referenced records or check whether a runtime tag exists.
 
-Reassignment does not define a variable. Definitions and assignments are resolved in source order within lexical function scopes, including same-line statements. Parameters and captured outer bindings may be reassigned; inner definitions do not escape their function. After reassignment, inferred value types are conservatively unknown rather than copied from an outdated initializer.
+Reassignment does not define a variable. Definitions and assignments are resolved in source order within lexical function scopes, including same-line statements. Parameters and captured outer bindings may be reassigned; inner definitions do not escape their function. After reassignment, inferred value types are generally unknown rather than copied from an outdated initializer.
+
+A bounded exception preserves literal-backed List accumulators when every write
+to the same lexical binding also produces a List:
+
+```axon
+results: []
+recs.each(r => results = results.add(r.processRec()))
+// results remains List, including inside the callback
+```
+
+Axon lists are immutable: built-in `add` returns a new List, so `=` is necessary.
+The List fact is shared by Trio/Xeto argument checks and embedded Xeto hover and
+completion. Unknown/type-changing writes, shadowed/custom `add` functions, and
+over-budget proofs remain conservative. This does not infer list element types,
+execute callbacks, or implement general flow-sensitive reassignment inference.
+
+An `if` without `else` preserves the following statement boundary, including
+blank lines. A declaration such as `results: []` after
+`if(inputSpecs.isNull) inputSpecs = specs()` is retained rather than dropped
+during parser recovery. Empty and populated List literals are both supported.
 
 Xeto parameter types and defaults are indexed separately. For example, `opts: Dict? <axon:"null">` accepts explicit `null` and may be omitted, while `opts: Dict <axon:"null">` has an omission default but is not inferred to accept explicit `null`. Defaults are preserved as Axon source, not evaluated. Nullable parameters without explicit defaults retain the existing omission behavior. Date, Time, DateTime, and DateSpan literals are distinguished from numbers.
+
+Named functions and inline lambda bindings are recognized as `Func` values when
+passed as callbacks. Embedded Xeto callback completion and local hover distinguish
+the function itself (`jevCallback`) from its invocation's return type
+(`jevCallback(code, headers, body)`). This is nominal callable typing, not callback
+signature/arity validation.
+
+Leading-dot multiline method chains retain their implicit receivers. Supported
+`try/catch` expressions inside block lambdas do not consume the enclosing lambda's
+`end`, so an initializer such as `allTags: points.map(...).findAll(...)` remains
+defined afterward. Known-function tooltips show `Func` in both Trio and Xeto
+(and other index-backed hover paths), retaining the function's return signature.
+
+Signature help keeps dictionary, list, string, and lambda defaults within their
+actual parameter labels; commas inside defaults do not add phantom parameters.
+For supported Axon in Xeto bodies and Trio `src` records, a local callback,
+parameter, or alias does not borrow a same-named global function's signature.
+Local callable signatures remain unknown, so the server returns no signature
+help rather than guessing. Trio signature help uses the containing source record,
+including multiline calls and inline `src:` forms.
+
+Callback return types are not propagated through higher-order calls: for example,
+`ioHttp(..., jevCallback)` retains its catalog return type (`Obj?`), not the
+callback's `Dict?`. Function bodies are not checked against their declared return
+types. Local lambda/alias call results, structural fitting, and scope-aware local
+definition/reference navigation remain incomplete; see the
+[current analysis reference](docs/type-intelligence.md).
 
 Metadata not preserved by older bundled catalogs remains incomplete until those catalogs are regenerated. Structural Xeto conformance, complete syntax-error reporting, and flow-sensitive variable type inference remain outside the current diagnostic scope. Some recovery and editor paths still use line-oriented scanning.
 
@@ -221,6 +268,18 @@ the call into the responsible package.
 ### Local Debugging
 
 Run the server checks from `go-server/` with `go test ./...` and `go vet ./...`. From the repository root, `npm run test:client` checks watcher behavior and `npm run compile` checks the TypeScript client.
+
+For callback/signature changes, smoke-test both named and inline callbacks in the
+development host, defaults containing quoted/nested commas, and a local callback
+that shadows an indexed function. The latter should not show the global
+signature. Check that an ordinary unshadowed call still highlights the correct
+parameter, including a multiline Trio call. These are suggested manual checks,
+not a claim that the current working build has been manually validated.
+
+Also check a captured List accumulator (`results: []` followed by
+`recs.each(r => results = results.add(...))`): Xeto hover should show `List`
+inside the RHS and afterward, and List-compatible completions should remain
+promoted. Replacing a write with an unknown value should restore unknown typing.
 
 Press <kbd>F5</kbd>, or pick the `Run Extension` configuration in `.vscode/launch.json`. Its `build-dev` pre-launch task runs two steps in sequence:
 

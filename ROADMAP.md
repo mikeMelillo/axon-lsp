@@ -28,6 +28,9 @@ behavior and known limitations are documented in the
 - Position-aware definition/reassignment diagnostics and conservative mutation typing
 - Declared nominal ancestry for embedded Xeto hints and conservative argument checks,
   with a pinned qualified type catalog (structural fitting remains deferred)
+- Function-value typing for named/inline callbacks, distinct from invocation returns
+- Structured signature parameter/default labels and lexical call-target guards,
+  including isolated multiline Trio source records
 
 ### Direction
 
@@ -48,6 +51,19 @@ commitments.
 
 ## Recent Notes
 
+- 0.4.4
+    - Retain `List` facts for literal-backed captured accumulators such as `results: []; recs.each(r => results = results.add(...))` when every write preserves List; share the fact across diagnostics and Xeto hover/completion without executing callbacks
+    - Preserve declarations following an `if` without `else`; fix the full `firstPassPipeline` reproduction losing `results: []` after its preceding conditional, with empty/populated List and live-edit hover regressions
+    - Preserve bindings initialized by chained lambdas containing `try do ... end catch ...`; try/catch no longer consumes the enclosing lambda's `end`
+    - Keep leading-dot multiline method chains attached to their receivers, preventing `.map(...)` callbacks from being mistaken for the List argument
+    - Show the `Func` type in known-function tooltips across host formats while retaining signatures and return types
+    - Recognize named functions, inline lambdas, and initializer aliases as `Func` values without confusing them with invocation return types
+    - Improve callback completion and hover while respecting lexical shadowing and conservative reassignment invalidation
+    - Build signature parameters from structured type/default metadata, with a quote/nesting-aware legacy fallback so commas inside defaults do not create phantom parameters
+    - Prevent local callbacks, parameters, and aliases from borrowing unrelated global signatures; retain unknown local signatures rather than guessing
+    - Use containing Trio source records for multiline signature help, preserving inline `src:` columns and isolating bindings between records
+    - Add focused regressions and update READMEs, plans, and documented callback/type-inference limitations
+    - Automated tests, race checks, vet, client checks, cache verification, and all six server builds passed; manual VS Code smoke testing pending
 - 0.4.3
     - Add trap-operator AST support and tag-safe hover, definition, and reference lookup
     - Separate variable definitions from reassignment with position-aware lexical binding resolution

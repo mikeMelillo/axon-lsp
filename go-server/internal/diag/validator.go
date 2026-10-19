@@ -233,8 +233,14 @@ func validateCallsFromAST(uri, source string, expression axon.Expr, manager *ind
 			if paramIndex >= len(fn.Params) {
 				break
 			}
-			if _, isLambda := arg.(*axon.LambdaExpr); isLambda {
-				continue
+			if isFilterArgument(fn, paramIndex) {
+				bare := arg
+				for group, ok := bare.(*axon.GroupExpr); ok; group, ok = bare.(*axon.GroupExpr) {
+					bare = group.Expression
+				}
+				if _, tag := bare.(*axon.NameExpr); tag {
+					continue // A bare filter tag is not a same-named function value.
+				}
 			}
 			actual, hasActualType := argumentExprType(uri, source, arg, manager, lineScopes)
 			if !hasActualType {
@@ -293,6 +299,17 @@ func toIndexPosition(position axon.Position) index.Position {
 }
 
 func argumentExprType(uri, source string, expression axon.Expr, manager *index.Manager, scopes *validationScopes) (typeinfo.Ref, bool) {
+	if scopes.bindings.IsListValue(expression, expression.Span().Start, func(name string) bool {
+		return manager.IsBuiltinListAddForURI(name, uri)
+	}) {
+		return typeinfo.Builtin("List"), true
+	}
+	if scopes.bindings.IsFunctionValue(expression, expression.Span().Start, func(name string) bool {
+		_, found := manager.FindFunctionForURI(name, uri)
+		return found
+	}) {
+		return typeinfo.Builtin("Func"), true
+	}
 	switch value := expression.(type) {
 	case *axon.GroupExpr:
 		return argumentExprType(uri, source, value.Expression, manager, scopes)

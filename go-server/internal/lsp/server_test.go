@@ -501,6 +501,7 @@ func TestLiteralInferenceAndHoverTypes(t *testing.T) {
 		"@lib::someRef": "Ref", "2026-01-01": "Date", "12:30:00": "Time",
 		"2026-01-01T12:30:00Z": "DateTime", "42": "Number",
 		"null": "null", "`/path`": "Uri", "true": "Bool",
+		"[]": "List", "[123]": "List",
 	} {
 		t.Run(source, func(t *testing.T) {
 			if got, ok := literalType(source); !ok || got != want {
@@ -524,6 +525,9 @@ func TestLiteralHoverUsesAxonExpressionSpans(t *testing.T) {
 		{source: `call(r"raw")`, cursor: 7, want: "Str"},
 		{source: "call(`fan://site`)", cursor: 9, want: "Uri"},
 		{source: `call(["item", 2])`, cursor: 10, want: "List"},
+		{source: `results: []`, cursor: 9, want: "List"},
+		{source: `results: []`, cursor: 10, want: "List"},
+		{source: `results: [123]`, cursor: 9, want: "List"},
 		{source: `call({key: "value"})`, cursor: 12, want: "Dict"},
 	}
 	for _, test := range tests {

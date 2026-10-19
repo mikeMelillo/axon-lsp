@@ -1,7 +1,7 @@
 # Current Analysis and Type Behavior
 
-This is a reference for the 0.4.3 implementation plus the cache/T0 nominal
-inheritance work, including known limitations. It is not an implementation plan
+This is a reference for the current 0.4.4 implementation, including cache/T0 nominal
+inheritance and known limitations. It is not an implementation plan
 or a complete Axon/Xeto language specification. Future work and review decisions live in the
 [planning index](plans/README.md).
 
@@ -41,6 +41,24 @@ same interpretation or source mapping yet.
   indexed function-return signatures. Argument diagnostics use literal,
   function-return, and declared owner-input types, but do not share a complete
   local-variable type evaluator with hover/completion.
+- Leading-dot continuation lines stay attached to the previous receiver, so
+  multiline `.map(...)` lambdas bind to the callback slot, not the List slot.
+  `try do ... end catch <expr>` and block catchers own only their own blocks;
+  they do not consume an enclosing lambda's `end` or following method chain.
+  Initializer bindings remain visible after those chains. The older bare
+  multiline `try ... catch ... end` editor form remains a compatibility path;
+  this is not full grammar/recovery or a change to catch-binding lifetime.
+- Optional-`else` lookahead preserves newlines when no `else` follows. Inline,
+  block, and nested conditionals therefore do not cause recovery to discard the
+  next declaration's name. Newlines before an actual `else` still join its branch.
+- Function values have type `sys::Func`: an unshadowed indexed function name,
+  a lambda, and local initializer aliases of either are callable values. This
+  does not use or evaluate the function body. For example, `jevCallback` is a
+  `Func`, while `jevCallback(code, headers, body)` has its declared `Dict?`
+  return type. Diagnostics classify these values rather than merely skipping
+  lambdas or treating defined function names as untyped. Alias lookup is bounded
+  and respects lexical shadowing and conservative reassignment invalidation.
+  This does not check callback parameter counts or return-signature conformance.
 - Both `value.func()` and `value.func` are checked as dot calls with an implicit
   first argument. Unresolved simple receivers/arguments, undefined functions,
   undefined assignment targets, missing required arguments, and primitive
@@ -58,19 +76,84 @@ same interpretation or source mapping yet.
   check. Filter-typed arguments have special handling, with limitations below.
 - `:` defines a binding; `=` requires an existing binding. The AST scope model
   handles same-line source order, function/lambda parameters, nested definitions,
-  captures, and shadowing. Reassignment conservatively invalidates inferred
-  value types rather than reusing stale initializer/parameter information.
+  captures, and shadowing. Reassignment generally invalidates inferred value
+  types rather than reusing stale initializer/parameter information. The bounded
+  List-invariant exception is described below.
   This is not branch- or invocation-sensitive flow analysis.
 - Parser errors are retained internally but are not published as syntax
   diagnostics. Incomplete-arrow and multiline Trio `src:` recovery have focused
   coverage; the AST is not a complete compiler.
 
+### Captured List accumulators
+
+`results: []; recs.each(r => results = results.add(r.processRec()))` parses as a
+closure assigning the existing outer binding. Its List fact no longer disappears
+at that assignment: `scope.Model.IsListValue` proves a literal-backed List seed
+and List-producing RHSs for **every** write to that exact lexical binding,
+including deferred closures and later-source writes. Nested shadowing is a
+different binding. Unknown/type-changing writes defeat the invariant; the query
+does not assume that a closure ran, or how often it might run.
+
+Supported facts are List literals/groups, bounded literal-backed aliases, and
+fully applied built-in `add(list, item)` / `list.add(item)` with a proven List
+receiver. This is a small on-success List-category rule, not element/shape typing
+or a guarantee that evaluating an argument cannot throw. It is gated to the
+selected pinned bundled built-in, never a lexical parameter/local or an indexed
+workspace/external override named `add`. Legacy bundled defs retain that built-in
+rule when bundled Xeto metadata is excluded. Other providers, declared parameter
+contracts, arbitrary return signatures, partial application, unsupported writes,
+and exhausted 128-step proofs do not establish this invariant.
+
+The same proof feeds Trio/Xeto argument diagnostics and embedded Xeto variable
+hover, argument completion, and receiver ranking, including reads within the
+assignment RHS. Tests assert a concrete List fact (including a Number-contract
+mismatch), not just absence of a diagnostic. Normal declared-return lookup is
+unchanged: `each(...)` itself is not inferred to return the accumulator List.
+General reassignment/branch/invocation inference remains T1 work.
+
+### Language semantics reviewed for this patch
+
+The upstream Haxall 4.0.6 chapters reviewed before the accumulator change were
+[Architecture](https://haxall.io/doc/hx.doc.haxall/Architecture),
+[Runtime](https://haxall.io/doc/hx.doc.haxall/Runtime),
+[Namespace](https://haxall.io/doc/hx.doc.haxall/Namespace),
+[Axon](https://haxall.io/doc/hx.doc.haxall/Axon),
+[Axon Language](https://haxall.io/doc/hx.doc.haxall/AxonLang), and
+[Axon Usage](https://haxall.io/doc/hx.doc.haxall/AxonUsage). In particular:
+
+- The runtime's enabled libraries/companion functions define its namespace;
+  editor provider precedence is not a live runtime namespace solver.
+- Axon is dynamically typed and functional. Dot calls pass an implicit first
+  argument; omitting parentheses from a bare function name produces the Func.
+- `:` defines, `=` reassigns, and closures capture lexical outer bindings;
+  ordinary `do`/`if`/`try` blocks do not introduce function scopes.
+- Lists are immutable; built-in `add` returns a new List and does not mutate the
+  old one. The pinned `AxonFuncs.fan` implementation and `funcs.xeto` declarations
+  agree; the declaration's broad `Obj?` return is not changed in the cache.
+
+These sources guide the focused fix, not a claim of complete language support.
+Known parser, catch, filter, and editor-resolution differences remain listed
+below; no runtime/database access is added to analysis.
+
 ## Editor behavior
 
 Signature help uses standard LSP, including nested/multiline AST call context
-for embedded Xeto and implicit receiver positions. Trio also has AST call
-context on the current line, with legacy word-based fallback. Some signature
-parameter labels are still reconstructed from display strings.
+for embedded Xeto, containing Trio `src` records, and implicit receiver positions.
+Trio records are isolated and the `src:` field label is masked without shifting
+inline columns. Structured parameter names/types/default source build the labels;
+older signatures use a lexical string/nesting-aware fallback. Dictionaries,
+lists, nested calls, strings, and lambda defaults containing commas remain one
+parameter. Parsed-owner fallback uses the same label builder as indexed functions.
+
+The callee is resolved at its exact UTF-16 source occurrence before global
+metadata is selected. A local lambda, owner/lambda parameter, alias, or reassigned
+binding yields no signature help rather than borrowing a same-named global's
+contract. Local signature inference is not implemented. The lookup does not use
+a shadow introduced only inside a later argument, and no unrelated earlier word
+can supply a signature after an unknown/shadowed real call target is found.
+Bare-name fallback is limited to the name at the cursor, excluding strings and
+trap keys. Other features' local definition/reference resolution remains separate
+F2 work; this is not a complete editor-wide name-resolution migration.
 
 Embedded Xeto hover recognizes literals, scoped parameters, selected local
 initializers, and indexed function returns, including outer dotted chains.
@@ -79,6 +162,17 @@ against first parameters, and function returns/scoped variables against active
 argument types. It keeps unknown function candidates visible. Variable candidates
 use exact cursor visibility and existing conservative mutation invalidation.
 These are bounded inference paths, not a complete shared flow-sensitive service.
+
+For a `Func`-typed argument (including `sys::Func?`), completion offers named
+callbacks as function values regardless of their return types, alongside typed
+local lambdas/aliases. Other argument slots retain return-type ranking for
+potential function invocations. A shadowing local replaces the same-named global
+function suggestion instead of inheriting its callable identity. Local callback
+hover displays `Func`; the shared indexed-function hover builder identifies the
+`Func` value across host formats while retaining its full signature and declared
+return type. Embedded Xeto no longer adds a separate duplicate annotation.
+Bare names in Filter-typed slots remain tag syntax, even when an indexed function
+shares the name.
 
 Definitions and function references primarily use the selected function index.
 Lexical callable shadowing, local navigation, reference identity, and scope/type
@@ -125,13 +219,20 @@ code evidence are in the [foundation analysis](plans/analysis-foundation.md#2-ev
 
 | Area | Current limitation |
 | --- | --- |
-| Resolution | Whitespace before call parentheses can change undefined-function reporting; local callables can incorrectly inherit global signatures |
+| Resolution | Whitespace before call parentheses can change undefined-function reporting; definition/reference and some hover paths are not yet uniformly scope-aware (signature help now guards local callees) |
 | Scope/recovery | Unrelated parse errors can re-enable leaking heuristic parameter ranges; catch regexes can match strings; not all features use exact-position binding queries |
 | Mapping | Some consumers still mix byte columns with UTF-16 positions; embedded function references can retain body-relative rather than host line numbers |
 | Lexical/grammar coverage | Multiline string contents can be scanned as code; defaulted/general trailing lambdas, partial application, dict shorthand, and try/catch are incompletely modeled |
 | Filters/catch semantics | Filter exemptions can suppress checks on evaluated comparison values; catch binding lifetime and some compatibility forms differ from the pinned runtime |
-| Signature presentation | A comma in a default expression can split one parameter into multiple displayed parameter entries |
+| Local callable signatures | Function values are recognized, but local lambda/alias invocation signatures and result types generally remain unknown; signature help deliberately does not substitute globals |
 | Type modeling | No flow-sensitive assignment inference, static trap-result types, structural conformance, or library dependency/version resolution |
+
+Callback parameter count/type/return conformance is not checked. Generic
+higher-order returns are not specialized: `ioHttp(..., jevCallback)` is still
+`Obj?` even when `jevCallback` declares `Dict?`. Function-body return expressions
+are not validated against declared return types (for example, `return res` in a
+function declaring `Str?`). No callback execution, HTTP request, or runtime
+inspection is part of inference.
 
 ## 0.4.3 validation record
 
@@ -159,3 +260,64 @@ graph direction, ambiguity/missing/cyclic/incomplete metadata, traversal limits,
 qualified return provenance, typed inputs, cursor-aware completion ranking,
 provider replacement/removal, and live bundled-cache exclusion. No new manual
 VS Code smoke test is claimed.
+
+## 0.4.4 callback/signature verification (2026-10-17)
+
+The callback-value fixes and both signature-help follow-ups passed `go test ./...`,
+the full race suite, `go vet`, client tests, TypeScript compilation, read-only
+cache verification, all six server builds, and whitespace checks. Regression
+coverage includes complex defaults, parsed-owner fallback, local/global callee
+shadowing, active parameters, UTF-16 positions, and isolated Trio records.
+Manual VS Code smoke testing remains outstanding for this working build; the
+README lists suggested checks. No cache regeneration or version bump was needed.
+
+### Parser/tooltip follow-up (2026-10-18)
+
+The reported `allTags` try/catch initializer and both multiline regex/map chains
+are covered by AST and Trio/Xeto diagnostic regressions, including lambda-local
+scope boundaries and `Func` tooltips. Full Go tests/race/vet, client checks,
+TypeScript compilation, cache verification, six server builds, and whitespace
+checks passed again. This remains part of 0.4.4; manual smoke testing is pending.
+
+### Captured List accumulator follow-up (2026-10-18)
+
+After reviewing the upstream architecture/Axon chapters, the `results: []`
+closure-assignment example passed parser-ownership, lexical invariant, diagnostic,
+and Xeto hover/completion regressions. Coverage includes repeated/block callback
+writes, shadowing, unknown/type-changing writes, selected-function overrides,
+legacy metadata selection, partial-application rejection, and proof budgets.
+Full Go tests/race/vet, client tests, TypeScript compilation, read-only cache
+verification, all six server builds, and whitespace checks passed. No cache/schema
+change or version bump was needed; manual VS Code smoke testing remains pending.
+
+### Empty versus populated List recheck (2026-10-18)
+
+Follow-up feedback reported `results: []` not being recognized while
+`results: [123]` was. Both are valid List literals. The smaller fragment passed
+literal, hover, live-edit, and built-server probes, but the subsequently supplied
+full `firstPassPipeline` function reproduced the failure: optional-`else`
+lookahead consumed the newline after
+`if(inputSpecs.isNull) inputSpecs = specs()`. Recovery then discarded the next
+declaration's name and reported undefined assignment/receiver uses of `results`.
+The issue was statement parsing, not empty-list typing or `List<of:...>` metadata.
+
+The parser now restores those newlines unless an `else` actually follows. AST
+regressions cover inline/block/nested conditions, real else branches, blank-line
+and semicolon separators, and both List forms. The full user function replaces
+the smaller live-edit hover fixture: `[]` → `[123]` → `[]` must retain the
+declaration, bracket literal, callback RHS, and returned List without undefined
+`results` diagnostics. This remains a focused 0.4.4 parser fix, not branch-sensitive
+type inference. Manual VS Code retesting remains outstanding.
+
+Full Go tests/race/vet, client tests, TypeScript compilation, read-only cache
+verification, all six server builds, and whitespace checks passed after the
+statement-boundary fix. The rebuilt Linux server also passed all 12 stdio hover
+checks on the full function across the three List edits, with no undefined
+`results` diagnostics.
+
+A separate warning can remain with only bundled metadata: the pinned
+`hx.xeto::specs` Xeto signature declares `filter: Filter` without an Axon default,
+although the Fantom implementation defaults both arguments to null. The live-edit
+regression supplies controlled helper signatures to isolate the List/parser case;
+the built-server probe confirmed this unrelated missing-filter warning. No cache
+or upstream signature was rewritten as part of this fix.
