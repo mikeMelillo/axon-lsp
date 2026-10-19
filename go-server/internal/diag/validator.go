@@ -10,6 +10,7 @@ import (
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/parser"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/resolver"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/scope"
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/trio"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/typeinfo"
 )
 
@@ -18,7 +19,7 @@ var keywords = map[string]struct{}{
 }
 
 func Validate(uri string, source string, manager *index.Manager) []index.Diagnostic {
-	return validate(uri, source, manager, true, true, nil)
+	return validateDocument(uri, source, manager, true)
 }
 
 func ValidateRegion(uri string, source string, manager *index.Manager, clearReferences bool) []index.Diagnostic {
@@ -26,7 +27,23 @@ func ValidateRegion(uri string, source string, manager *index.Manager, clearRefe
 }
 
 func ValidateWithMissingArgumentWarnings(uri string, source string, manager *index.Manager, enabled bool) []index.Diagnostic {
-	return validate(uri, source, manager, true, enabled, nil)
+	return validateDocument(uri, source, manager, enabled)
+}
+
+// Trio field values are data, not Axon. Analyze each src independently so neither
+// metadata nor bindings in another record can influence a function body.
+func validateDocument(uri, source string, manager *index.Manager, warnMissingArguments bool) []index.Diagnostic {
+	if !strings.HasSuffix(strings.ToLower(uri), ".trio") {
+		return validate(uri, source, manager, true, warnMissingArguments, nil)
+	}
+	manager.ClearReferencesForURI(uri)
+	diagnostics := []index.Diagnostic{}
+	for _, region := range trio.ExtractAxonRegions(source) {
+		colon := strings.IndexByte(region.Text, ':')
+		body := strings.Repeat(" ", colon+1) + region.Text[colon+1:]
+		diagnostics = append(diagnostics, validateAt(uri, body, manager, false, warnMissingArguments, nil, region.StartLine)...)
+	}
+	return diagnostics
 }
 
 func ValidateRegionWithMissingArgumentWarnings(uri string, source string, manager *index.Manager, clearReferences, enabled bool) []index.Diagnostic {
@@ -46,6 +63,10 @@ func ValidateRegionWithTypes(uri string, source string, manager *index.Manager, 
 }
 
 func validate(uri string, source string, manager *index.Manager, clearReferences, warnMissingArguments bool, parameters map[string]string) []index.Diagnostic {
+	return validateAt(uri, source, manager, clearReferences, warnMissingArguments, parameters, 0)
+}
+
+func validateAt(uri string, source string, manager *index.Manager, clearReferences, warnMissingArguments bool, parameters map[string]string, lineOffset int) []index.Diagnostic {
 	if clearReferences {
 		manager.ClearReferencesForURI(uri)
 	}
@@ -90,7 +111,7 @@ func validate(uri string, source string, manager *index.Manager, clearReferences
 			_, isScoped := scopedNameAt(lineScopes, i, len(utf16.Encode([]rune(line[:match.Start]))), match.Word)
 			symbol, found := manager.FindFunctionForURI(match.Word, uri)
 			if found {
-				manager.AddReference(match.Word, resolver.Location(uri, i, match.Start, match.End))
+				manager.AddReference(match.Word, resolver.Location(uri, i+lineOffset, match.Start, match.End))
 				_ = symbol
 			}
 			// Dot callees are checked by the AST, including bare calls and UTF-16 ranges.
@@ -111,6 +132,10 @@ func validate(uri string, source string, manager *index.Manager, clearReferences
 		diagnostics = append(diagnostics, validateCallsFromAST(uri, masked.Text, expression, manager, localFuncs, lineScopes, ignoredLines, warnMissingArguments)...)
 	}
 
+	for i := range diagnostics {
+		diagnostics[i].Range.Start.Line += lineOffset
+		diagnostics[i].Range.End.Line += lineOffset
+	}
 	return diagnostics
 }
 

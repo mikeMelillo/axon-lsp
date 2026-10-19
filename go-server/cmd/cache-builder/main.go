@@ -47,20 +47,21 @@ type position struct {
 }
 
 type serializedVariant struct {
-	Name          string            `json:"name"`
-	Doc           string            `json:"doc"`
-	ArgsStr       string            `json:"args_str"`
-	Params        []string          `json:"params"`
-	ParamTypes    map[string]string `json:"param_types,omitempty"`
-	ParamDefaults map[string]string `json:"param_defaults,omitempty"`
-	ReturnType    string            `json:"return_type,omitempty"`
-	Kind          int               `json:"kind"`
-	Location      *location         `json:"location,omitempty"`
-	SourceKind    string            `json:"source_kind"`
-	SourceModel   string            `json:"source_model"`
-	SourceVersion string            `json:"source_version"`
-	SourceID      string            `json:"source_id"`
-	SourceRoot    string            `json:"source_root,omitempty"`
+	Name              string            `json:"name"`
+	Doc               string            `json:"doc"`
+	ArgsStr           string            `json:"args_str"`
+	Params            []string          `json:"params"`
+	ParamTypes        map[string]string `json:"param_types,omitempty"`
+	ParamDefaults     map[string]string `json:"param_defaults,omitempty"`
+	DefaultProvenance map[string]string `json:"default_provenance,omitempty"`
+	ReturnType        string            `json:"return_type,omitempty"`
+	Kind              int               `json:"kind"`
+	Location          *location         `json:"location,omitempty"`
+	SourceKind        string            `json:"source_kind"`
+	SourceModel       string            `json:"source_model"`
+	SourceVersion     string            `json:"source_version"`
+	SourceID          string            `json:"source_id"`
+	SourceRoot        string            `json:"source_root,omitempty"`
 }
 
 type serializedCache struct {
@@ -120,6 +121,9 @@ func collectSource(functions map[string][]serializedVariant, xetoSources map[str
 				functions[fn.Name] = append(functions[fn.Name], serializeXeto(fn, source))
 			}
 		}
+	}
+	if err := supplementNativeDefaults(functions, source); err != nil {
+		return err
 	}
 	for _, rel := range append(append([]string{}, source.PropertyFiles...), source.LicenseFile) {
 		if rel == "" {

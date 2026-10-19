@@ -46,7 +46,11 @@ acceptNumber(results)`
 	} {
 		t.Run(host.ext, func(t *testing.T) {
 			uri := "file:///workspace/accumulator." + host.ext
-			doc := host.prefix + body + host.suffix
+			bodyText := body
+			if host.ext == "trio" {
+				bodyText = "    " + strings.ReplaceAll(body, "\n", "\n    ")
+			}
+			doc := host.prefix + bodyText + host.suffix
 			s.setDocument(uri, doc)
 			m.UpdateDocument(uri, doc)
 			var diagnostics []index.Diagnostic

@@ -13,18 +13,28 @@ default arguments should be represented in the generated Xeto signature rather
 than being lost or inferred from prose. This would let runtimes and tooling
 agree on which arguments may be omitted and what value omission supplies.
 
-Likely implementation point: Haxall's Fantom-to-Xeto signature/spec generation
-pipeline, with a corresponding Xeto representation if the format does not
-already express all Fantom defaults.
+Research update (2026-10-19): Xeto already represents literal defaults with
+`checked: Bool "true"` or `<val:"true">`; Axon-expression defaults use
+`<axon:"...">`. Current `sys.api::read` already declares the true default, unlike
+the pinned Haxall 4.0.6 `hx::read`. The local parser now consumes those explicit
+scalar values, with a reviewed exact-revision supplement for selected older
+native signatures. No new syntax is needed just to describe read's true default.
+
+An upstream issue should instead audit agreement between native defaults and
+declared parameter metadata. Concrete remaining examples include `axon::col`
+and `hx.xeto::specs`. The older convert4 native-parameter conversion discarded
+default metadata; current gen-fan verifies parameter counts but does not fully
+check default agreement. Arbitrary dynamic native defaults need a default-presence
+contract, not forced evaluation or conversion into invented literal values.
+No upstream issue or PR has been submitted by this work.
 
 ## Xeto: explicit nullable and optional parameter metadata
 
 Function signatures should unambiguously indicate whether an input accepts
-`null` and whether the argument may be omitted. The desired behavior is that a
-nullable input is also an optional argument, with its nullability/default
-semantics explicit in the signature. If Xeto needs to distinguish “may be
-null” from “may be omitted,” both properties should be representable rather
-than conflated.
+`null` and whether the argument may be omitted. Nullability must not alone imply
+omittability, and a non-null input may have an omission default. Both properties
+should be explicit rather than conflated; inherited scalar instantiation values
+must not silently make all parameters optional.
 
 This metadata would improve call validation, completion details, generated
 documentation, and language-server diagnostics without requiring tools to

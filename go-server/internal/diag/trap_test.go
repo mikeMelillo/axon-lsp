@@ -30,7 +30,7 @@ func TestTrapDiagnostics(t *testing.T) {
 inspect(rec->curVal, absentRec)`, "Undefined variable: absentRec"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			diagnostics := Validate("file:///test.trio", tc.source, mgr)
+			diagnostics := ValidateRegion("file:///test.trio", tc.source, mgr, true)
 			if tc.message == "" {
 				if len(diagnostics) != 0 {
 					t.Fatalf("unexpected diagnostics: %#v", diagnostics)
@@ -40,11 +40,11 @@ inspect(rec->curVal, absentRec)`, "Undefined variable: absentRec"},
 			}
 		})
 	}
-	Validate("file:///test.trio", "rec: null\nrec->curVal", mgr)
+	ValidateRegion("file:///test.trio", "rec: null\nrec->curVal", mgr, true)
 	if refs := mgr.GetReferences("curVal"); len(refs) != 0 {
 		t.Fatalf("trap tag is not a function reference: %#v", refs)
 	}
-	diagnostics := Validate("file:///test.trio", `"😀"; absentRec->curVal`, mgr)
+	diagnostics := ValidateRegion("file:///test.trio", `"😀"; absentRec->curVal`, mgr, true)
 	if len(diagnostics) != 1 || diagnostics[0].Range != (index.Range{Start: index.Position{Character: 6}, End: index.Position{Character: 15}}) {
 		t.Fatalf("incorrect UTF-16 receiver range: %#v", diagnostics)
 	}

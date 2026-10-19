@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/ast"
+	"github.com/mikeMelillo/axon-lsp/go-server/internal/axon"
 	"github.com/mikeMelillo/axon-lsp/go-server/internal/lexer"
 )
 
@@ -37,8 +38,7 @@ type recordChunk struct {
 }
 
 var (
-	tagPattern  = regexp.MustCompile(`^([a-zA-Z0-9_]+):(.*)`)
-	argsPattern = regexp.MustCompile(`(?m)^\s*\((.*?)\)\s*=>`)
+	tagPattern = regexp.MustCompile(`^([a-zA-Z0-9_]+):(.*)`)
 )
 
 func ParseFile(path string) map[string]ParsedFunction {
@@ -202,20 +202,11 @@ func parseSignature(src string) ([]string, string, string) {
 	if strings.Contains(src, "defcomp") {
 		return parseDefcomp(src)
 	}
-	match := argsPattern.FindStringSubmatch(src)
-	if match == nil {
+	params, signature, ok := axon.LambdaSignature(src)
+	if !ok {
 		return []string{}, "()", ""
 	}
-	argsContent := strings.TrimSpace(match[1])
-	if argsContent == "" {
-		return []string{}, "()", ""
-	}
-	parts := strings.Split(argsContent, ",")
-	params := make([]string, 0, len(parts))
-	for _, part := range parts {
-		params = append(params, strings.TrimSpace(part))
-	}
-	return params, "(" + argsContent + ")", ""
+	return params, signature, ""
 }
 
 func parseDefcomp(src string) ([]string, string, string) {

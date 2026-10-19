@@ -258,6 +258,18 @@ func parseFuncSignature(originalBlock, maskedBlock string, blockStartLine int) (
 			continue
 		}
 		typeName, metadata := splitSlotMetadata(value)
+		// A scalar value following a type is Xeto's own val default, not
+		// part of the type name. Only this slot's explicit value is used.
+		var literalDefault string
+		if quote := strings.IndexByte(typeName, '"'); quote >= 0 {
+			literalDefault = strings.TrimSpace(typeName[quote:])
+			typeName = strings.TrimSpace(typeName[:quote])
+		}
+		for _, meta := range splitSignatureTokens(metadata) {
+			if key, text, ok := parseSlot(meta); ok && key == "val" && literalDefault == "" {
+				literalDefault = text
+			}
+		}
 		for _, meta := range splitSignatureTokens(metadata) {
 			if strings.TrimSpace(meta) == "maybe" && !strings.HasSuffix(typeName, "?") {
 				typeName += "?"
@@ -270,16 +282,37 @@ func parseFuncSignature(originalBlock, maskedBlock string, blockStartLine int) (
 		params = append(params, name)
 		paramTypes[name] = typeName
 		label := name + ": " + typeName
+		if decoded, err := strconv.Unquote(literalDefault); literalDefault != "" && err == nil {
+			// Normalize only known scalar encodings. Other defaults retain
+			// their typed Xeto spelling for display; none are evaluated.
+			text := typeName + " " + literalDefault
+			switch strings.TrimPrefix(typeName, "sys::") {
+			case "Bool":
+				if decoded == "true" || decoded == "false" {
+					text = decoded
+				}
+			case "Str":
+				text = strconv.Quote(decoded)
+			case "Number", "Int", "Float":
+				text = typeName + " " + literalDefault
+				if scalarNumberDefault.MatchString(decoded) {
+					text = decoded
+				}
+			}
+			paramDefaults[name] = text
+		}
 		if metadata != "" {
 			for _, meta := range splitSignatureTokens(metadata) {
 				key, source, ok := parseSlot(meta)
 				if ok && key == "axon" {
 					if decoded, err := strconv.Unquote(source); err == nil {
 						paramDefaults[name] = decoded
-						label += " = " + decoded
 					}
 				}
 			}
+		}
+		if text, found := paramDefaults[name]; found {
+			label += " = " + text
 		}
 		argLabels = append(argLabels, label)
 	}
@@ -366,7 +399,36 @@ func splitSlotMetadata(value string) (string, string) {
 			depth--
 		case '<':
 			if depth == 0 {
-				return strings.TrimSpace(value[:i]), strings.TrimSuffix(strings.TrimSpace(value[i+1:]), ">")
+				// A scalar default may follow the metadata block.
+				level := 1
+				var quoted byte
+				for j := i + 1; j < len(value); j++ {
+					c := value[j]
+					if quoted != 0 {
+						if c == '\\' {
+							j++
+							continue
+						}
+						if c == quoted {
+							quoted = 0
+						}
+						continue
+					}
+					if c == '"' || c == '\'' || c == '`' {
+						quoted = c
+						continue
+					}
+					if c == '<' {
+						level++
+					}
+					if c == '>' {
+						level--
+					}
+					if level == 0 {
+						return strings.TrimSpace(value[:i] + " " + value[j+1:]), strings.TrimSpace(value[i+1 : j])
+					}
+				}
+				return strings.TrimSpace(value[:i]), strings.TrimSpace(value[i+1:])
 			}
 		}
 	}
@@ -387,6 +449,7 @@ func parseSlot(token string) (string, string, bool) {
 }
 
 var regexpSlotName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var scalarNumberDefault = regexp.MustCompile(`^-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$`)
 
 func cleanDocLines(lines []string) []string {
 	cleaned := make([]string, 0, len(lines))

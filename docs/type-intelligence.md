@@ -1,6 +1,6 @@
 # Current Analysis and Type Behavior
 
-This is a reference for the current 0.4.4 implementation, including cache/T0 nominal
+This is a reference for the current 0.4.5 implementation, including cache/T0 nominal
 inheritance and known limitations. It is not an implementation plan
 or a complete Axon/Xeto language specification. Future work and review decisions live in the
 [planning index](plans/README.md).
@@ -29,6 +29,17 @@ or a complete Axon/Xeto language specification. Future work and review decisions
   slot graph. Older bundled catalogs may lack default metadata until regenerated.
 
 ## Expressions, bindings, and diagnostics
+
+Trio document diagnostics extract and validate only `src:` regions, masking the
+field label without shifting inline columns. Other record fields are data:
+`ruleOn: room and networkRef->dis=="EPMS"` is not an Axon receiver expression.
+Each region is analyzed independently, with diagnostic and reference line numbers
+mapped back to the host document. References are cleared once per document and
+then accumulated from its source regions; deleting all source regions clears old
+references. There is no raw-Axon fallback for a Trio document without `src:`.
+Explicit region-validation APIs still accept already-extracted Axon fragments.
+This is a diagnostics boundary fix, not a migration of every editor feature or
+TextMate grammar to region-aware analysis.
 
 The Axon AST carries source spans with byte offsets and UTF-16 positions. It is
 used alongside legacy line-oriented scanners; not every editor feature uses the
@@ -83,6 +94,14 @@ same interpretation or source mapping yet.
 - Parser errors are retained internally but are not published as syntax
   diagnostics. Incomplete-arrow and multiline Trio `src:` recovery have focused
   coverage; the AST is not a complete compiler.
+- Parenthesized lambdas recognize required/defaulted parameter mixes, including
+  nested default expressions and multiline parameter lists. Parameter names enter
+  the lambda's lexical scope regardless of whether a default is present. Trio
+  signature extraction shares this grammar and retains the original rendered
+  signature rather than splitting nested defaults at every comma. Defaults are
+  parsed to recognize the header but not evaluated, walked as body declarations,
+  or used to infer parameter types/check local callable arity. Default-expression
+  name validation and invocation semantics remain outside this bounded fix.
 
 ### Captured List accumulators
 
@@ -110,6 +129,41 @@ assignment RHS. Tests assert a concrete List fact (including a Number-contract
 mismatch), not just absence of a diagnostic. Normal declared-return lookup is
 unchanged: `each(...)` itself is not inferred to return the accumulator List.
 General reassignment/branch/invocation inference remains T1 work.
+
+### Explicit native defaults (0.4.5)
+
+The Trio infeed follow-up also recognizes dictionary marker/removal entries
+(`{flag}`, `{-limit}`) in default expressions. Previously the unsupported map
+entry made lambda-header recognition fail, losing required parameter bindings.
+The full infeed pipeline regression now preserves `infeed`; a deliberately
+undefined receiver still warns. Go tests/race/vet and six server builds passed
+after this parser fix. Manual editor retesting remains outstanding.
+
+The shared Xeto parser separates explicit scalar defaults from type names:
+`checked: Bool "true"` and `checked: Bool <val:"true">` preserve Bool typing and
+permit omission. This also works in indexed sources and archives. Only explicit
+slot values are considered, never inherited type-instantiation values. Existing
+`<axon:"...">` expressions remain supported and take precedence when both forms
+are present. Known Bool, Str, and simple numeric defaults are normalized for
+display; other encodings retain their typed Xeto spelling. Default strings are
+display/omission facts, not inputs to an interpreter or parameter-type inference.
+
+The [native supplement](cache-baseline.md#native-default-supplement) supplies 11
+reviewed defaults for 10 older bundled functions, using exact-revision source
+evidence. It preserves explicit upstream defaults and does not change provider
+selection or enrich unrelated workspace/external functions. Unreviewed revisions
+and dynamic defaults remain outside coverage. `read(site)` and `specs()` can omit
+their recovered defaults; `read()` still needs `filter`, and defaulted Bool
+inputs do not gain explicit null acceptance. Provenance is retained in the
+generated cache artifact; no upstream source bytes are changed.
+
+Verification: Go tests and the full race suite, vet, client tests, TypeScript
+compilation, deterministic cache verification, all six server builds, and
+whitespace checks passed. Source/archive/cache transfer and override-isolation
+regressions pass. A rebuilt-server stdio probe accepted `read(site)`, `specs()`,
+and `"42".parseNumber`, preserved the missing-filter and explicit-null warnings,
+and displayed `read(filter: Filter, checked: Bool = true)` in signature help.
+Manual VS Code smoke testing of this follow-up remains outstanding.
 
 ### Language semantics reviewed for this patch
 
@@ -222,7 +276,7 @@ code evidence are in the [foundation analysis](plans/analysis-foundation.md#2-ev
 | Resolution | Whitespace before call parentheses can change undefined-function reporting; definition/reference and some hover paths are not yet uniformly scope-aware (signature help now guards local callees) |
 | Scope/recovery | Unrelated parse errors can re-enable leaking heuristic parameter ranges; catch regexes can match strings; not all features use exact-position binding queries |
 | Mapping | Some consumers still mix byte columns with UTF-16 positions; embedded function references can retain body-relative rather than host line numbers |
-| Lexical/grammar coverage | Multiline string contents can be scanned as code; defaulted/general trailing lambdas, partial application, dict shorthand, and try/catch are incompletely modeled |
+| Lexical/grammar coverage | Multiline string contents can be scanned as code; general trailing lambdas, partial application, dict shorthand, and try/catch are incompletely modeled; defaulted parameter headers are recognized, not fully semantically checked |
 | Filters/catch semantics | Filter exemptions can suppress checks on evaluated comparison values; catch binding lifetime and some compatibility forms differ from the pinned runtime |
 | Local callable signatures | Function values are recognized, but local lambda/alias invocation signatures and result types generally remain unknown; signature help deliberately does not substitute globals |
 | Type modeling | No flow-sensitive assignment inference, static trap-result types, structural conformance, or library dependency/version resolution |
@@ -315,9 +369,37 @@ statement-boundary fix. The rebuilt Linux server also passed all 12 stdio hover
 checks on the full function across the three List edits, with no undefined
 `results` diagnostics.
 
-A separate warning can remain with only bundled metadata: the pinned
+A separate warning originally remained with only bundled metadata: the pinned
 `hx.xeto::specs` Xeto signature declares `filter: Filter` without an Axon default,
 although the Fantom implementation defaults both arguments to null. The live-edit
 regression supplies controlled helper signatures to isolate the List/parser case;
 the built-server probe confirmed this unrelated missing-filter warning. No cache
 or upstream signature was rewritten as part of this fix.
+
+The subsequent 0.4.5 default-metadata follow-up below resolves that bundled
+`specs()` omission warning through a source-verified supplement.
+
+### Trio mixed-parameter follow-up (2026-10-19)
+
+The exact `sensorLocationToAisle` example now has no parameter-related warnings.
+Regressions cover required/all-defaulted/mixed headers, nested and multiline
+defaults, preserved Trio display signatures, lexical boundaries, and a genuine
+undefined receiver with its host line. The rebuilt Linux server also passed
+open/change probes: original source clean, `missingLocation` typo detected,
+restored source clean. Go tests/race/vet, client tests, TypeScript compilation,
+read-only cache verification, six server builds, and whitespace checks passed.
+No version bump or cache regeneration was needed; manual editor retesting remains
+outstanding.
+
+### Trio source-region follow-up (2026-10-19)
+
+The complete `aeFdcim_mechLoadVsDegreeDay` record passes without diagnostics;
+`networkRef` in `ruleOn` is no longer checked as an Axon variable. An undefined
+receiver injected inside the defcomp source still warns at its original document
+position. Tests also cover record-scope isolation, metadata names not declaring
+body variables, inline source columns, source-only references, and reference
+cleanup when source is removed. The rebuilt Linux server passed open/change
+probes for the original rule, injected body error, and a metadata-only record.
+Full Go tests/race/vet, client tests, TypeScript compilation, cache verification,
+six server builds, and whitespace checks passed; manual editor retesting remains
+outstanding.

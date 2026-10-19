@@ -2,6 +2,22 @@ package scope
 
 import "testing"
 
+func TestDefaultedParametersAreLexicalBindings(t *testing.T) {
+	source := "f: (location, low: 3, opts: {items: [1, 2]}) => do\n use(location, low, opts)\nend\nuse(location, low, opts)"
+	model := Analyze(source, nil)
+	for _, name := range []string{"location", "low", "opts"} {
+		if binding, found := model.Resolve(name, 1); !found || !binding.Parameter {
+			t.Errorf("parameter %s not bound inside lambda: %#v", name, binding)
+		}
+		if _, found := model.Resolve(name, 3); found {
+			t.Errorf("parameter %s escaped lambda", name)
+		}
+	}
+	if _, found := model.Resolve("items", 1); found {
+		t.Fatal("default map keys must not become body bindings")
+	}
+}
+
 func TestOuterAssignmentContainingLambdaRemainsInOuterScope(t *testing.T) {
 	source := "targetEvents: events.findAll(e => e.is(snapshotSpec))\ncheck(targetEvents)"
 	model := Analyze(source, nil)

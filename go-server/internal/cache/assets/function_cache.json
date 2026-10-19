@@ -3527,7 +3527,7 @@
       {
         "name": "col",
         "doc": "Get a column by its name.  If not resolved then\nreturn null or throw UnknownNameErr based on checked flag.\n\nExample:\n\n// get meta data for given columm\nread(temp).hisRead(today).col(\"ts\").meta",
-        "args_str": "(grid: Grid, name: Str, checked: Bool)",
+        "args_str": "(grid: Grid, name: Str, checked: Bool = true)",
         "params": [
           "grid",
           "name",
@@ -3537,6 +3537,12 @@
           "checked": "Bool",
           "grid": "Grid",
           "name": "Str"
+        },
+        "param_defaults": {
+          "checked": "true"
+        },
+        "default_provenance": {
+          "checked": "https://github.com/haxall/haxall/blob/b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f/src/core/axon/fan/lib/AxonFuncs.fan#L1183: static Col? col(Grid grid, Str name, Bool checked := true)"
         },
         "return_type": "Obj?",
         "kind": 3,
@@ -33984,7 +33990,7 @@
       {
         "name": "parseNumber",
         "doc": "Parse a Str into a number with an option unit.  If invalid\nformat and checked is false return null, otherwise throw ParseErr.\nAlso see [Funcs.parseInt] and [Funcs.parseFloat] to parse basic integers and\nfloating point numbers without a unit.\n\nExamples:\n\nparseNumber(\"123\")\nparseNumber(\"123kW\")\nparseNumber(\"123.567\").format(\"#.000\")",
-        "args_str": "(val: Str, checked: Bool)",
+        "args_str": "(val: Str, checked: Bool = true)",
         "params": [
           "val",
           "checked"
@@ -33992,6 +33998,12 @@
         "param_types": {
           "checked": "Bool",
           "val": "Str"
+        },
+        "param_defaults": {
+          "checked": "true"
+        },
+        "default_provenance": {
+          "checked": "https://github.com/haxall/haxall/blob/b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f/src/core/axon/fan/lib/AxonFuncs.fan#L2484: static Number? parseNumber(Str val, Bool checked := true)"
         },
         "return_type": "Number?",
         "kind": 3,
@@ -38676,7 +38688,7 @@
       {
         "name": "read",
         "doc": "////////////////////////////////////////////////////////////////////////\nDatabase Reads\n////////////////////////////////////////////////////////////////////////\n\nRead from database the first record which matches [filter](ph.doc::Filters).\nIf no matches found throw UnknownRecErr or null based on checked\nflag.  If there are multiple matches it is indeterminate which one is\nreturned.  See [Funcs.readAll] for how filter works.\n\nExamples:\n\nread(site)                 // read any site rec\nread(site and dis==\"HQ\")   // read site rec with specific dis tag\nread(chiller)              // raise exception if no recs with chiller tag\nread(chiller, false)       // return null if no recs with chiller tag",
-        "args_str": "(filter: Filter, checked: Bool)",
+        "args_str": "(filter: Filter, checked: Bool = true)",
         "params": [
           "filter",
           "checked"
@@ -38684,6 +38696,12 @@
         "param_types": {
           "checked": "Bool",
           "filter": "Filter"
+        },
+        "param_defaults": {
+          "checked": "true"
+        },
+        "default_provenance": {
+          "checked": "https://github.com/haxall/haxall/blob/b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f/src/core/hxm/fan/HxFuncs.fan#L40: static Dict? read(Expr filterExpr, Expr checked := Literal.trueVal)"
         },
         "return_type": "Dict?",
         "kind": 3,
@@ -38709,14 +38727,17 @@
       {
         "name": "read",
         "doc": "Read the first entity which matches [filter](doc.xeto::Filters).\nIf no matches found raise error or return null based on checked\nflag.  If there are multiple matches it is indeterminate which one is\nreturned.\n\nExamples:\n\nread(Site)                 // read any entity which subtypes Site\nread(Site and dis==\"HQ\")   // read site with specific dis tag\nread(Room)                 // raise error if no room entities\nread(Room, false)          // return null if no room entities",
-        "args_str": "(filter: Filter, checked: Bool \"true\")",
+        "args_str": "(filter: Filter, checked: Bool = true)",
         "params": [
           "filter",
           "checked"
         ],
         "param_types": {
-          "checked": "Bool \"true\"",
+          "checked": "Bool",
           "filter": "Filter"
+        },
+        "param_defaults": {
+          "checked": "true"
         },
         "return_type": "Dict?",
         "kind": 3,
@@ -38797,7 +38818,7 @@
       {
         "name": "readAll",
         "doc": "Read all records from the database which match the [filter](ph.doc::Filters).\nThe filter must be an expression which matches the filter structure.\nString values may parsed into a filter using [parseFilter()] function.\n\nOptions:\n- `limit`: max number of recs to return\n- `sort`: sort by display name\n- `search`: search pattern to apply in addition to the\nfilter; see [parseSearch()]\n- `trash`: include recs with the `trash` tag\n- `gridMeta`: dict to use for the result's grid level meta\n\nExamples:\n\nreadAll(site)                      // read all site recs\nreadAll(equip and siteRef==@xyz)   // read all equip in a given site\nreadAll(equip, {limit:10})         // read up to ten equips\nreadAll(equip, {sort})             // read all equip sorted by dis",
-        "args_str": "(filter: Filter, opts: Dict?)",
+        "args_str": "(filter: Filter, opts: Dict? = null)",
         "params": [
           "filter",
           "opts"
@@ -38805,6 +38826,12 @@
         "param_types": {
           "filter": "Filter",
           "opts": "Dict?"
+        },
+        "param_defaults": {
+          "opts": "null"
+        },
+        "default_provenance": {
+          "opts": "https://github.com/haxall/haxall/blob/b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f/src/core/hxm/fan/HxFuncs.fan#L143: static Grid readAll(Expr filterExpr, Expr? optsExpr := null)"
         },
         "return_type": "Grid",
         "kind": 3,
@@ -39176,7 +39203,7 @@
       {
         "name": "readById",
         "doc": "Read a record from database by `id`.  If not found\nthrow UnknownRecErr or return null based on checked flag.\nIn Haxall all refs are relative, but in SkySpark refs may\nbe prefixed with something like \"p:projName:r:\".  This function\nwill accept both relative and absolute refs.\n\nExamples:\n\nreadById(@2b00f9dc-82690ed6)          // relative ref literal\nreadById(@:demo:r:2b00f9dc-82690ed6)  // project absolute literal\nreadById(id)                          // read using variable\nreadById(equip-\u003esiteRef)              // read from ref tag",
-        "args_str": "(id: Ref?, checked: Bool)",
+        "args_str": "(id: Ref?, checked: Bool = true)",
         "params": [
           "id",
           "checked"
@@ -39184,6 +39211,12 @@
         "param_types": {
           "checked": "Bool",
           "id": "Ref?"
+        },
+        "param_defaults": {
+          "checked": "true"
+        },
+        "default_provenance": {
+          "checked": "https://github.com/haxall/haxall/blob/b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f/src/core/hxm/fan/HxFuncs.fan#L63: static Dict? readById(Ref? id, Bool checked := true)"
         },
         "return_type": "Dict?",
         "kind": 3,
@@ -39209,14 +39242,17 @@
       {
         "name": "readById",
         "doc": "////////////////////////////////////////////////////////////////////////\nReads\n////////////////////////////////////////////////////////////////////////\n\nRead an entity by `id`.  If not found raise error or\nreturn null based on checked flag.  A null id behaves as\nan entity which is not found.\n\nExamples:\n\nreadById(@2b00f9dc-82690ed6)\nreadById(@2b00f9dc-82690ed6, false)",
-        "args_str": "(id: Ref?, checked: Bool \"true\")",
+        "args_str": "(id: Ref?, checked: Bool = true)",
         "params": [
           "id",
           "checked"
         ],
         "param_types": {
-          "checked": "Bool \"true\"",
+          "checked": "Bool",
           "id": "Ref?"
+        },
+        "param_defaults": {
+          "checked": "true"
         },
         "return_type": "Dict?",
         "kind": 3,
@@ -39297,7 +39333,7 @@
       {
         "name": "readByIdPersistentTags",
         "doc": "Given record id, read only the persistent tags from Folio.\nAlso see [Funcs.readByIdTransientTags] and [Funcs.readById].",
-        "args_str": "(id: Ref, checked: Bool)",
+        "args_str": "(id: Ref, checked: Bool = true)",
         "params": [
           "id",
           "checked"
@@ -39305,6 +39341,12 @@
         "param_types": {
           "checked": "Bool",
           "id": "Ref"
+        },
+        "param_defaults": {
+          "checked": "true"
+        },
+        "default_provenance": {
+          "checked": "https://github.com/haxall/haxall/blob/b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f/src/core/hxm/fan/HxFuncs.fan#L71: static Dict? readByIdPersistentTags(Ref id, Bool checked := true)"
         },
         "return_type": "Dict?",
         "kind": 3,
@@ -39385,7 +39427,7 @@
       {
         "name": "readByIdTransientTags",
         "doc": "Given record id, read only the transient tags from Folio.\nAlso see [Funcs.readByIdPersistentTags] and [Funcs.readById].",
-        "args_str": "(id: Ref, checked: Bool)",
+        "args_str": "(id: Ref, checked: Bool = true)",
         "params": [
           "id",
           "checked"
@@ -39393,6 +39435,12 @@
         "param_types": {
           "checked": "Bool",
           "id": "Ref"
+        },
+        "param_defaults": {
+          "checked": "true"
+        },
+        "default_provenance": {
+          "checked": "https://github.com/haxall/haxall/blob/b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f/src/core/hxm/fan/HxFuncs.fan#L79: static Dict? readByIdTransientTags(Ref id, Bool checked := true)"
         },
         "return_type": "Dict?",
         "kind": 3,
@@ -39473,7 +39521,7 @@
       {
         "name": "readByIds",
         "doc": "Read a list of record ids into a grid.  The rows in the\nresult correspond by index to the ids list.  If checked is true,\nthen every id must be found in the database or UnknownRecErr\nis thrown.  If checked is false, then an unknown record is\nreturned as a row with every column set to null (including\nthe `id` tag).  Either relative or project absolute refs may\nbe used.\n\nExamples:\n\n// read two relative refs\nreadByIds([@2af6f9ce-6ddc5075, @2af6f9ce-2d56b43a])\n\n// read two project absolute refs\nreadByIds([@p:demo:r:2af6f9ce-6ddc5075, @p:demo:r:2af6f9ce-2d56b43a])\n\n// return null for a given id if it does not exist\nreadByIds([@2af6f9ce-6ddc5075, @2af6f9ce-2d56b43a], false)",
-        "args_str": "(ids: List, checked: Bool)",
+        "args_str": "(ids: List, checked: Bool = true)",
         "params": [
           "ids",
           "checked"
@@ -39481,6 +39529,12 @@
         "param_types": {
           "checked": "Bool",
           "ids": "List"
+        },
+        "param_defaults": {
+          "checked": "true"
+        },
+        "default_provenance": {
+          "checked": "https://github.com/haxall/haxall/blob/b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f/src/core/hxm/fan/HxFuncs.fan#L121: static Grid readByIds(Ref[] ids, Bool checked := true)"
         },
         "return_type": "Grid",
         "kind": 3,
@@ -39506,14 +39560,17 @@
       {
         "name": "readByIds",
         "doc": "Read a list of entities by their ids into a grid.  The rows in the\nresult correspond by index to the ids list.  If checked is true,\nthen every id must be found or an error is raised.  If checked\nis false, then an unknown entity is returned as a row with every column\nset to null (including the `id` tag).\n\nExamples:\n\nreadByIds([@2af6f9ce-6ddc5075, @2af6f9ce-2d56b43a])\nreadByIds([@2af6f9ce-6ddc5075, @2af6f9ce-2d56b43a], false)",
-        "args_str": "(ids: List, checked: Bool \"true\")",
+        "args_str": "(ids: List, checked: Bool = true)",
         "params": [
           "ids",
           "checked"
         ],
         "param_types": {
-          "checked": "Bool \"true\"",
+          "checked": "Bool",
           "ids": "List"
+        },
+        "param_defaults": {
+          "checked": "true"
         },
         "return_type": "Grid",
         "kind": 3,
@@ -39594,7 +39651,7 @@
       {
         "name": "readByIdsStream",
         "doc": "Read a list of ids as a stream of Dict records.\nIf checked if false, then records not found are skipped.\nSee [hx.doc.haxall::Streams#readbyidsstream].",
-        "args_str": "(ids: List, checked: Bool)",
+        "args_str": "(ids: List, checked: Bool = true)",
         "params": [
           "ids",
           "checked"
@@ -39602,6 +39659,12 @@
         "param_types": {
           "checked": "Bool",
           "ids": "List"
+        },
+        "param_defaults": {
+          "checked": "true"
+        },
+        "default_provenance": {
+          "checked": "https://github.com/haxall/haxall/blob/b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f/src/core/hxm/fan/HxFuncs.fan#L155: static Obj readByIdsStream(Ref[] ids, Bool checked := true)"
         },
         "return_type": "Obj",
         "kind": 3,
@@ -45961,7 +46024,7 @@
       {
         "name": "specs",
         "doc": "List Xeto specs as a list of their [dict](fan.xeto::Spec) representation.\nScope may one of the following:\n- null: return all the top-level specs currently in the using scope\n- lib: return all the top-level specs declared in given library\n- list of lib: all specs in given libraries\n\nA filter may be specified to filter the specs found in the scope.  The\ndict representation for filtering supports a \"slots\" tag on each spec\nwith a Dict of the effective slots name.  This allows filtering slots\nusing the syntax `slots-\u003esomeName`.\n\nNOTE: returns the same Spec instances as returned by [fan.xeto::Namespace].\nThe spec meta is modeled using full fidelity and *not* haystack fidelity.\nUse [Funcs.specMeta] to normalize to haystack fidelity for use inside Axon.\n\nExamples:\n\nspecs()                  // specs in using scope\nspecLib(\"ph\").specs      // specs in a given library\nspecs(null, abstract)    // filter specs with filter expression\nspecs(null, slots-\u003eahu)  // filter specs have ahu tag",
-        "args_str": "(scope: Obj?, filter: Filter)",
+        "args_str": "(scope: Obj? = null, filter: Filter = null)",
         "params": [
           "scope",
           "filter"
@@ -45969,6 +46032,14 @@
         "param_types": {
           "filter": "Filter",
           "scope": "Obj?"
+        },
+        "param_defaults": {
+          "filter": "null",
+          "scope": "null"
+        },
+        "default_provenance": {
+          "filter": "https://github.com/haxall/haxall/blob/b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f/src/ext/hxXeto/fan/XetoFuncs.fan#L121: static Spec[] specs(Expr scope := Literal.nullVal, Expr filter := Literal.nullVal)",
+          "scope": "https://github.com/haxall/haxall/blob/b79cdfa41a8f6ac9e5b3b1e321d1ed33e8d70f5f/src/ext/hxXeto/fan/XetoFuncs.fan#L121: static Spec[] specs(Expr scope := Literal.nullVal, Expr filter := Literal.nullVal)"
         },
         "return_type": "List",
         "kind": 3,

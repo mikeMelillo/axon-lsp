@@ -51,6 +51,12 @@ commitments.
 
 ## Recent Notes
 
+- 0.4.5
+    - Parse marker/removal dictionaries such as `{flag}` and `{-limit}` inside parameter defaults, retaining required parameter bindings in the full infeed pipeline regression
+    - Parse explicit Xeto scalar defaults (`Bool "true"` and `<val:"true">`) separately from parameter types
+    - Supplement reviewed older bundled signatures with revision-verified native defaults and generated provenance; preserve required arguments, nullability, and workspace overrides
+    - Limit Trio diagnostics and diagnostic-produced references to isolated `src:` bodies; treat `ruleOn`, help text, and other record fields as data while preserving host positions and real body errors
+    - Recognize mixed required/defaulted lambda parameters in Trio diagnostics; share signature parsing with the Axon AST so required inputs remain scoped and nested defaults do not create phantom parameter names
 - 0.4.4
     - Retain `List` facts for literal-backed captured accumulators such as `results: []; recs.each(r => results = results.add(...))` when every write preserves List; share the fact across diagnostics and Xeto hover/completion without executing callbacks
     - Preserve declarations following an `if` without `else`; fix the full `firstPassPipeline` reproduction losing `results: []` after its preceding conditional, with empty/populated List and live-edit hover regressions

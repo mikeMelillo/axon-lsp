@@ -125,7 +125,7 @@
   ],
   "artifacts_sha256": {
     "coreFuncs.trio": "2ae27c47f808eb38bbda1145ec7b3dce458f01b1ddb61a8cbb085e06f8b9b09b",
-    "function_cache.json": "63bf49fa6cdc35793c90f06b7531c4febfe60760ec62411d796eb585916d32f2",
+    "function_cache.json": "a2eb2d4033ad337c326b28cfbad9f226557edaad328eabce1de0e5b04e3754f2",
     "type_catalog.json": "046f04ea9e33fd81320127c64c02acde395a6829d67d2f1630557a4de58eb928",
     "xeto_sources.json": "f31e4327e7c2e68a9d2cf2482075c08bda29e5f1b81ed823e42b14ec60049853"
   }

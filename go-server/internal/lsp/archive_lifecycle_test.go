@@ -47,7 +47,7 @@ func TestArchiveLifecycleDependentDiagnostics(t *testing.T) {
 	s := newWorkspaceTestServer(t, root)
 	s.refreshWorkspaceIndexes()
 	caller := testFileURI(filepath.Join(root, "caller.trio"))
-	s.setDocument(caller, "lifecycleFunc()")
+	s.setDocument(caller, "name: caller\nfunc\nsrc: () => lifecycleFunc()")
 	archive := filepath.Join(root, "library.xetolib")
 	for _, step := range []struct {
 		name      string
@@ -83,7 +83,7 @@ func TestArchiveLifecycleDirectoryOnlyAndMissingRoot(t *testing.T) {
 			}
 			s.refreshWorkspaceIndexes()
 			caller := testFileURI(filepath.Join(root, "caller.trio"))
-			s.setDocument(caller, "lifecycleFunc()")
+			s.setDocument(caller, "name: caller\nfunc\nsrc: () => lifecycleFunc()")
 			unsaved := testFileURI(filepath.Join(root, "unsaved.trio"))
 			s.setDocument(unsaved, "name: unsavedFunc\nfunc\nsrc: () => 1\n")
 			for _, create := range []bool{true, false, true} {
@@ -119,7 +119,7 @@ func TestArchiveLifecycleReconcileRecoversPartialWrite(t *testing.T) {
 	writeLSPArchive(t, archive, "lifecycleFunc")
 	s.refreshWorkspaceIndexes()
 	caller := testFileURI(filepath.Join(root, "caller.trio"))
-	s.setDocument(caller, "lifecycleFunc()")
+	s.setDocument(caller, "name: caller\nfunc\nsrc: () => lifecycleFunc()")
 	if err := os.WriteFile(archive, []byte("partial zip"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestSourceLifecycleWatchedAndWorkspaceFolderDiagnostics(t *testing.T) {
 	s := newWorkspaceTestServer(t, root)
 	s.refreshWorkspaceIndexes()
 	caller := testFileURI(filepath.Join(root, "caller.trio"))
-	s.setDocument(caller, "lifecycleFunc()")
+	s.setDocument(caller, "name: caller\nfunc\nsrc: () => lifecycleFunc()")
 	source := filepath.Join(root, "function.trio")
 	writeTestTrioFunction(t, source, "lifecycleFunc")
 	if err := s.updateWatchedFiles([]fileEvent{{URI: testFileURI(source), Type: 1}}); err != nil {

@@ -30,6 +30,29 @@ do not live in Haxall's source tree. Its current declared `ph.version` is
 `5.0.0` with `ph.maturity=alpha`; those versions are independent of Haxall's
 `4.0.6` label. Pin commits rather than relying on moving branches or labels.
 
+## Native-default supplement
+
+`go-server/cmd/cache-builder/defaults.go` contains reviewed constant-default
+rules for the exact pinned Haxall 4.0.6 revision. The builder verifies each native
+method signature against locked source bytes, targets its library-specific Xeto
+variant and parameter, and fails if matching evidence or the target disappears.
+It never modifies upstream source, replaces explicit Xeto defaults, or enriches
+workspace/external overrides. Other revisions do not receive these rules.
+
+The initial set covers `read`, `readAll`, `readById`, `readByIds`,
+`readByIdPersistentTags`, `readByIdTransientTags`, `readByIdsStream`, `col`,
+`parseNumber`, and `specs` (both inputs): 11 recovered parameter defaults.
+Each supplement records a `default_provenance` entry in `function_cache.json`
+with a revision-qualified source URL, line, and checked method signature.
+This additive audit metadata is covered by the artifact checksum. Runtime clients
+consume the normal parameter default maps; provider precedence is unchanged.
+
+Native Xeto slot values (`Bool "true"` / `<val:"true">`) are also extracted by
+the shared source parser, including workspace/archive inputs. Known Bool, Str,
+and simple numeric encodings get readable default text; other scalar defaults
+retain typed Xeto spelling. All defaults are unevaluated display/omission facts.
+No compiler, live runtime, or execution of arbitrary Fantom defaults is required.
+
 ## Regeneration and verification
 
 From the repository root:

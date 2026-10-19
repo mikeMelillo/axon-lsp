@@ -188,6 +188,12 @@ func Parse(source string) ParseResult { return ParseAt(source, Position{}) }
 // ParseAt parses a source fragment and positions AST spans relative to base.
 // Byte offsets remain relative to source; this is useful for embedded Axon.
 func ParseAt(source string, base Position) ParseResult {
+	p := newExpressionParser(source, base)
+	expressions := p.parseSequence(nil)
+	return ParseResult{Expressions: expressions, Errors: p.errors}
+}
+
+func newExpressionParser(source string, base Position) *expressionParser {
 	tokens := LexAt(source, base)
 	significant := make([]Token, 0, len(tokens))
 	for _, token := range tokens {
@@ -202,11 +208,23 @@ func ParseAt(source string, base Position) ParseResult {
 			significant = append(significant, token)
 		}
 	}
-	p := &expressionParser{source: source, tokens: significant}
-	result := ParseResult{}
-	result.Expressions = p.parseSequence(nil)
-	result.Errors = p.errors
-	return result
+	return &expressionParser{source: source, tokens: significant}
+}
+
+// LambdaSignature extracts names and the original parenthesized signature,
+// independently of body recovery. Defaults are parsed, not evaluated or bound
+// as declarations. Trio indexing uses the same grammar as lexical analysis.
+func LambdaSignature(source string) ([]string, string, bool) {
+	p := newExpressionParser(source, Position{})
+	p.skipNewlines()
+	if !p.at(TokenOperator, "(") {
+		return nil, "", false
+	}
+	params, close, ok := p.lookaheadLambda()
+	if !ok {
+		return nil, "", false
+	}
+	return params, source[p.current().Start:p.tokens[close].End], true
 }
 
 type expressionParser struct {
@@ -565,15 +583,25 @@ func (p *expressionParser) parseMap() Expr {
 		if key == nil {
 			break
 		}
-		if !p.at(TokenOperator, ":") {
-			p.addError("expected ':' between map key and value", p.current(), p.current())
-			break
-		}
-		p.consume()
-		value := p.parseExpression(0)
-		if value == nil {
-			p.addError("expected map value", p.current(), p.current())
-			break
+		var value Expr
+		if p.at(TokenOperator, ":") {
+			p.consume()
+			value = p.parseExpression(0)
+			if value == nil {
+				p.addError("expected map value", p.current(), p.current())
+				break
+			}
+		} else {
+			// Marker/removal dictionary entries are literal keys, not reads
+			// or parameter declarations: {flag}, {-limit}.
+			bare := key
+			if unary, ok := key.(*UnaryExpr); ok && unary.Operator == "-" {
+				bare = unary.Operand
+			}
+			if _, ok := bare.(*NameExpr); !ok {
+				p.addError("expected ':' between map key and value", p.current(), p.current())
+				break
+			}
 		}
 		entries = append(entries, MapEntry{Key: key, Value: value})
 		hadNewline := p.atKind(TokenNewline)
@@ -762,7 +790,7 @@ func (p *expressionParser) lookaheadLambda() ([]string, int, bool) {
 				break
 			}
 		}
-		if token.Kind == TokenEOF || token.Kind == TokenNewline {
+		if token.Kind == TokenEOF {
 			return nil, -1, false
 		}
 	}
@@ -770,21 +798,33 @@ func (p *expressionParser) lookaheadLambda() ([]string, int, bool) {
 		return nil, -1, false
 	}
 	params := []string{}
-	expectName := true
-	for i := p.index + 1; i < close; i++ {
-		token := p.tokens[i]
-		if expectName {
-			if token.Kind != TokenIdentifier && token.Kind != TokenTypeName {
-				return nil, -1, false
-			}
-			params = append(params, token.Text)
-		} else if token.Kind != TokenOperator || token.Text != "," {
+	q := &expressionParser{source: p.source, tokens: p.tokens, index: p.index + 1}
+	q.skipNewlines()
+	for q.index < close {
+		name := q.consume()
+		if name.Kind != TokenIdentifier && name.Kind != TokenTypeName {
 			return nil, -1, false
 		}
-		expectName = !expectName
-	}
-	if expectName && len(params) > 0 {
-		return nil, -1, false
+		params = append(params, name.Text)
+		if q.at(TokenOperator, ":") {
+			q.consume()
+			q.skipNewlines()
+			if q.parseExpression(0) == nil || len(q.errors) != 0 {
+				return nil, -1, false
+			}
+		}
+		q.skipNewlines()
+		if q.index == close {
+			break
+		}
+		if !q.at(TokenOperator, ",") {
+			return nil, -1, false
+		}
+		q.consume()
+		q.skipNewlines()
+		if q.index >= close {
+			return nil, -1, false
+		}
 	}
 	return params, close, true
 }

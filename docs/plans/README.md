@@ -8,6 +8,12 @@ are separate proposals for Haxall/Xeto, not local implementation commitments.
 
 ## Active review plans
 
+The 0.4.5 follow-up consumes explicit Xeto scalar slot defaults and adds a limited,
+revision-verified native-default supplement for older bundled signatures. It does
+not implement general Fantom reflection/evaluation, change namespace precedence,
+or make nullable and omittable synonymous. See the cache baseline's supplement
+record and the current analysis reference for coverage and limits.
+
 Baseline: 0.4.3 plus the pinned cache baseline (`2fc9630`). **T0 is implemented
 along with the callback/signature correctness subset for the current 0.4.4 build.**
 Broader F1–F3 and T1–T3 work remains draft for review, not approved release scopes
@@ -24,6 +30,13 @@ or claims that those proposed features already exist.
 | T3 | Structural conformance and library/version modeling | [Type-model evolution](type-model-evolution.md) |
 
 ### Implemented callback/signature subset
+
+The Trio follow-up also recognizes required/defaulted parameter mixes in the
+shared lambda grammar and indexed signatures, preserving lexical parameter
+bindings without evaluating defaults or adding local-callable arity checks.
+Trio document diagnostics now use isolated `src:` regions rather than parsing
+record metadata as Axon; inline columns and diagnostic/reference host lines are
+preserved, including source removal and records without a source body.
 
 The [foundation plan's delivery record](analysis-foundation.md#1a-implemented-correctness-subset)
 separates these fixes from the still-proposed F2 migration:

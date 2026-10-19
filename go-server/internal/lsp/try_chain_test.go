@@ -59,7 +59,12 @@ consume(str)`
   consume: Func { value: Obj }
 }`)
 			uri := "file:///workspace/chains." + host.ext
-			doc := host.prefix + body + host.suffix
+			bodyText, indent := body, 0
+			if host.ext == "trio" {
+				bodyText = "    " + strings.ReplaceAll(body, "\n", "\n    ")
+				indent = 4
+			}
+			doc := host.prefix + bodyText + host.suffix
 			s.setDocument(uri, doc)
 			m.UpdateDocument(uri, doc)
 			if err := s.publishDiagnostics(uri); err != nil {
@@ -80,7 +85,7 @@ consume(str)`
 			// without losing its declared List return signature.
 			line := strings.Count(host.prefix, "\n") + 8
 			s.writer = &bytes.Buffer{}
-			params, _ := json.Marshal(hoverParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: index.Position{Line: line, Character: 4}})
+			params, _ := json.Marshal(hoverParams{TextDocument: textDocumentIdentifier{URI: uri}, Position: index.Position{Line: line, Character: 4 + indent}})
 			if err := s.handle(requestMessage{ID: json.RawMessage("1"), Method: "textDocument/hover", Params: params}); err != nil {
 				t.Fatal(err)
 			}

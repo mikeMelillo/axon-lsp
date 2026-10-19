@@ -29,7 +29,31 @@ small syntax-diagnostic release. Avoid a flag-day rewrite.
 
 ## 1a. Implemented correctness subset
 
-Current 0.4.4 build, updated 2026-10-18. This is a delivery record, not approval
+Default metadata follow-up (0.4.5, 2026-10-19): explicit Xeto scalar slot values
+are separated from type names and used as omission/display facts, alongside Axon
+defaults. A reviewed source-verified cache-builder supplement fills missing
+defaults in selected pinned native functions without borrowing from unrelated
+providers/revisions. General native default extraction/evaluation is deferred;
+the locked upstream source remains unchanged.
+
+Trio parameter follow-up (2026-10-19): the shared Axon lambda-header grammar now
+accepts mixed required/defaulted parameters and nested/multiline defaults. Trio
+signature indexing uses the same parser, retaining plain names and original
+display source. The `sensorLocationToAisle` regression protects required inputs,
+genuine undefined-name warnings, and lexical scope boundaries. Default evaluation,
+default-expression name analysis, parameter-type inference, and local-callable
+arity checks remain deferred; this does not deliver the full F1 lambda model.
+
+Trio region follow-up (2026-10-19): document diagnostics validate only extracted
+`src:` regions, not arbitrary record fields. This removes false receiver checks
+for `networkRef` in the reported `ruleOn` metadata. Regions do not share bindings;
+diagnostics/references retain host positions, and source removal clears stale
+references. Fragment-oriented tests use explicit region APIs, and lifecycle/body
+fixtures now use valid Trio wrappers/indentation rather than raw Axon masquerading
+as whole Trio documents. Full editor-wide region/resolution unification remains
+deferred.
+
+Current 0.4.4 build, updated 2026-10-19. This is a delivery record, not approval
 of the remaining F1–F3 scope:
 
 - Callable values: indexed function names and inline lambdas/initializer aliases

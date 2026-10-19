@@ -11,10 +11,10 @@ import (
 
 func TestXetoDefaultsTransferFromSourceArchiveAndCache(t *testing.T) {
 	content := `+Funcs {
-  defaultsTransfer: Func { nullable: Dict?, nil: Dict? <axon:"null">, flag: Bool <axon:"false">, zero: Number <axon:"0">, dict: Dict <axon:"{a: \"comma, colon:\", b: 0}">, custom: example.lib::Unknown, returns: Dict <maybe> }
+  defaultsTransfer: Func { nullable: Dict?, nil: Dict? <axon:"null">, native: Bool "true", nativeZero: Number <val:"0">, flag: Bool <axon:"false">, zero: Number <axon:"0">, dict: Dict <axon:"{a: \"comma, colon:\", b: 0}">, custom: example.lib::Unknown, returns: Dict <maybe> }
 }`
 	parsed := xeto.ParseURIContent("file:///defaults.xeto", content)["defaultsTransfer"]
-	want := map[string]string{"nil": "null", "flag": "false", "zero": "0", "dict": `{a: "comma, colon:", b: 0}`}
+	want := map[string]string{"nil": "null", "native": "true", "nativeZero": "0", "flag": "false", "zero": "0", "dict": `{a: "comma, colon:", b: 0}`}
 	check := func(t *testing.T, fn Symbol) {
 		t.Helper()
 		if !reflect.DeepEqual(fn.ParamDefaults, want) || !reflect.DeepEqual(fn.ParamTypes, parsed.ParamTypes) || fn.ArgsStr != parsed.ArgsStr || fn.ReturnType != "Dict?" {

@@ -15,7 +15,7 @@ func TestReportsUndefinedFunction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	diagnostics := Validate("file:///test.trio", "undefinedFunc(x)", mgr)
+	diagnostics := ValidateRegion("file:///test.trio", "undefinedFunc(x)", mgr, true)
 	if len(diagnostics) == 0 || diagnostics[0].Message != "Undefined function: undefinedFunc" {
 		t.Fatalf("unexpected diagnostics: %#v", diagnostics)
 	}
@@ -497,7 +497,7 @@ func TestLspIgnoreSkipsDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	diagnostics := Validate("file:///test.trio", "undefinedFunc(x) //lspignore", mgr)
+	diagnostics := ValidateRegion("file:///test.trio", "undefinedFunc(x) //lspignore", mgr, true)
 	if len(diagnostics) != 0 {
 		t.Fatalf("expected no diagnostics, got %#v", diagnostics)
 	}
@@ -515,7 +515,7 @@ read() // unknownInlineFunc()
 unknownBlockFunc()
 read()
 */`
-	diagnostics := Validate("file:///test.trio", source, mgr)
+	diagnostics := ValidateRegion("file:///test.trio", source, mgr, true)
 	if len(diagnostics) != 0 {
 		t.Fatalf("expected no comment diagnostics, got %#v", diagnostics)
 	}
@@ -531,7 +531,7 @@ func TestCodeAroundBlockCommentsIsValidated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	diagnostics := Validate("file:///test.trio", "missingBefore() /* hiddenMissing() */ missingAfter()", mgr)
+	diagnostics := ValidateRegion("file:///test.trio", "missingBefore() /* hiddenMissing() */ missingAfter()", mgr, true)
 	if len(diagnostics) != 2 {
 		t.Fatalf("expected two live-code diagnostics, got %#v", diagnostics)
 	}
@@ -547,7 +547,7 @@ func TestCommentMarkersInsideLiteralsAreNotComments(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := "uri: `fan://unknownUriFunc()`\nvalue: \"//unknownStringFunc()\""
-	diagnostics := Validate("file:///test.trio", source, mgr)
+	diagnostics := ValidateRegion("file:///test.trio", source, mgr, true)
 	if len(diagnostics) != 0 {
 		t.Fatalf("expected literals to remain non-code, got %#v", diagnostics)
 	}
@@ -559,7 +559,7 @@ func TestLspIgnoreInsideStringDoesNotSuppressDiagnostic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	diagnostics := Validate("file:///test.trio", `missingFunc("//lspignore")`, mgr)
+	diagnostics := ValidateRegion("file:///test.trio", `missingFunc("//lspignore")`, mgr, true)
 	if len(diagnostics) != 1 || diagnostics[0].Message != "Undefined function: missingFunc" {
 		t.Fatalf("expected string marker not to suppress diagnostic, got %#v", diagnostics)
 	}

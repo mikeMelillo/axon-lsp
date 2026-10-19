@@ -138,6 +138,21 @@ the function itself (`jevCallback`) from its invocation's return type
 (`jevCallback(code, headers, body)`). This is nominal callable typing, not callback
 signature/arity validation.
 
+Required and defaulted lambda parameters can be mixed, for example
+`(location, rowNumLow: 3, rowNumHigh: 19) => ...`. All are scoped parameters,
+including in Trio `src:` bodies. Trio signatures retain default source text while
+indexing plain parameter names; defaults are not evaluated or used to infer
+parameter types or validate local-callable arity.
+
+Dictionary marker/removal defaults such as `(infeed, date, opts: {-limit})`
+are supported: `limit` is a literal dictionary key, not a variable, and the
+required parameters remain visible throughout the function body.
+
+Trio diagnostics analyze only `src:` bodies (inline or indented), not record
+fields such as `ruleOn`, `help`, or `doc`. Each source record has an independent
+scope; diagnostics and diagnostic-produced function references retain document
+positions. A Trio document without `src:` has no Axon diagnostics.
+
 Leading-dot multiline method chains retain their implicit receivers. Supported
 `try/catch` expressions inside block lambdas do not consume the enclosing lambda's
 `end`, so an initializer such as `allTags: points.map(...).findAll(...)` remains
@@ -160,6 +175,23 @@ definition/reference navigation remain incomplete; see the
 [current analysis reference](docs/type-intelligence.md).
 
 Metadata not preserved by older bundled catalogs remains incomplete until those catalogs are regenerated. Structural Xeto conformance, complete syntax-error reporting, and flow-sensitive variable type inference remain outside the current diagnostic scope. Some recovery and editor paths still use line-oriented scanning.
+
+### Explicit and recovered parameter defaults
+
+Xeto scalar defaults such as `checked: Bool "true"` and
+`checked: Bool <val:"true">` are recognized alongside `<axon:"true">` defaults.
+They permit omission without making a non-null parameter nullable. Unfamiliar
+scalar encodings retain typed Xeto default text for display, never execution.
+Only explicit slot defaults count; a scalar type's inherited value does not
+make a function argument optional.
+
+For the pinned Haxall 4.0.6 bundle, reviewed source-verified supplements recover
+missing defaults for the read family, `col`, `parseNumber`, and `specs`. Thus
+`read(site)` is valid, `read()` still needs a filter, and signature help displays
+`checked: Bool = true`. Workspace overrides keep their own contracts. The
+supplement is intentionally limited, not general Fantom-default inference;
+unreviewed/dynamic defaults are not guessed. See the
+[cache baseline](docs/cache-baseline.md#native-default-supplement) for provenance.
 
 ## How It Works
 

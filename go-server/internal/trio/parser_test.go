@@ -3,9 +3,18 @@ package trio
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestSignatureNamesExcludeDefaultExpressions(t *testing.T) {
+	signature := `(location, opts: {items: [1, 2], label: "a,b"}, fallback: choose(3, 19))`
+	fn := ParseURIContent("file:///defaults.trio", "name: defaults\nfunc\nsrc:\n    "+signature+" => location")["defaults"]
+	if !reflect.DeepEqual(fn.Params, []string{"location", "opts", "fallback"}) || fn.ArgsStr != signature {
+		t.Fatalf("nested default split into phantom names or lost its display source: %#v", fn)
+	}
+}
 
 func TestParseBasicFunction(t *testing.T) {
 	t.Parallel()
