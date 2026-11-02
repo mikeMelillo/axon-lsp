@@ -207,13 +207,102 @@ func TestParseRecoversFromMalformedExpression(t *testing.T) {
 	}
 }
 
-func TestMissingDeclarationValuePreservesFollowingLambda(t *testing.T) {
+func TestMultilineDeclarationCanInitializeLambda(t *testing.T) {
 	parsed := Parse("src:\n() => do\n  value: 1\nend")
-	if len(parsed.Errors) != 1 || len(parsed.Expressions) != 2 {
-		t.Fatalf("missing declaration value must not consume the next statement: %#v", parsed)
+	if len(parsed.Errors) != 0 || len(parsed.Expressions) != 1 {
+		t.Fatalf("newline after colon must allow a lambda value: %#v", parsed)
 	}
-	if _, ok := parsed.Expressions[1].(*LambdaExpr); !ok {
-		t.Fatalf("following lambda was lost during recovery: %T", parsed.Expressions[1])
+	declaration, ok := parsed.Expressions[0].(*BinaryExpr)
+	if !ok || declaration.Operator != ":" {
+		t.Fatalf("expected declaration: %#v", parsed.Expressions[0])
+	}
+	if _, ok := declaration.Right.(*LambdaExpr); !ok {
+		t.Fatalf("lambda value was lost: %T", declaration.Right)
+	}
+}
+
+func TestMissingDeclarationValuePreservesStatementBoundary(t *testing.T) {
+	for _, source := range []string{"do\nmissing:\nend", "missing:\nnext: 1"} {
+		parsed := Parse(source)
+		if len(parsed.Errors) != 1 || parsed.Errors[0].Message != "expected declaration value" {
+			t.Fatalf("missing value must not consume following declaration or end: %#v", parsed)
+		}
+	}
+}
+
+func TestMultilineConditionalDeclaration(t *testing.T) {
+	parsed := Parse("newRack:\nif(true) {}\nelse {rack}\nuse(newRack)")
+	if len(parsed.Errors) != 0 || len(parsed.Expressions) != 2 {
+		t.Fatalf("multiline initializer must retain the next statement: %#v", parsed)
+	}
+	declaration := parsed.Expressions[0].(*BinaryExpr)
+	conditional, ok := declaration.Right.(*IfExpr)
+	if !ok || conditional.Else == nil {
+		t.Fatalf("declaration must retain the complete conditional: %#v", declaration)
+	}
+}
+
+func TestMapCommaNewlines(t *testing.T) {
+	for _, source := range []string{"{current,\n phase: \"A\"}", "{\n navName: \"Rack\",\n aisle: 1,\n}", "{current,\n phase: \"A\",\n}"} {
+		parsed := Parse(source)
+		if len(parsed.Errors) != 0 || len(parsed.Expressions) != 1 {
+			t.Fatalf("multiline map must parse cleanly: %q: %#v", source, parsed)
+		}
+		if dictionary, ok := parsed.Expressions[0].(*MapExpr); !ok || len(dictionary.Entries) != 2 {
+			t.Fatalf("map entries were lost: %#v", parsed.Expressions[0])
+		}
+	}
+}
+
+func TestMalformedLogicalOperandsRetainFollowingStatement(t *testing.T) {
+	for _, condition := range []string{"or true", "and true", "true or", "true and"} {
+		parsed := Parse("if(" + condition + ") do\nreturn null\nend\nafter()")
+		if len(parsed.Errors) != 1 || len(parsed.Expressions) != 2 {
+			t.Fatalf("logical error must not cascade or consume following statements: %q: %#v", condition, parsed)
+		}
+		call, ok := parsed.Expressions[1].(*CallExpr)
+		if !ok || call.Callee.(*NameExpr).Name != "after" {
+			t.Fatalf("following call was lost: %#v", parsed.Expressions)
+		}
+	}
+}
+
+func TestMultilineLogicalOperatorsPreservePrecedence(t *testing.T) {
+	for _, source := range []string{
+		"a\n or b\n and c",
+		"a or\n b and\n c",
+		"a\n or b and\n c",
+	} {
+		parsed := Parse(source)
+		if len(parsed.Errors) != 0 || len(parsed.Expressions) != 1 {
+			t.Fatalf("logical continuation must remain one expression: %q: %#v", source, parsed)
+		}
+		outer, ok := parsed.Expressions[0].(*BinaryExpr)
+		if !ok || outer.Operator != "or" || outer.Left.(*NameExpr).Name != "a" {
+			t.Fatalf("expected outer or: %#v", parsed.Expressions[0])
+		}
+		inner, ok := outer.Right.(*BinaryExpr)
+		if !ok || inner.Operator != "and" || inner.Left.(*NameExpr).Name != "b" || inner.Right.(*NameExpr).Name != "c" {
+			t.Fatalf("and must bind more tightly across newlines: %#v", outer.Right)
+		}
+	}
+}
+
+func TestIfConditionEndsBeforePostfixLikeBranch(t *testing.T) {
+	for _, branch := range []string{"[]", "[1]", "[].toGrid", "(value)", "(value).toStr"} {
+		source := "if(\nvalues[0].isNull\n) " + branch + " else null\nafter()"
+		parsed := Parse(source)
+		if len(parsed.Errors) != 0 || len(parsed.Expressions) != 2 {
+			t.Fatalf("branch must not be parsed as condition indexing/call: %q: %#v", source, parsed)
+		}
+		conditional, ok := parsed.Expressions[0].(*IfExpr)
+		if !ok || conditional.Then == nil || conditional.Else == nil {
+			t.Fatalf("conditional branches were lost: %#v", parsed.Expressions[0])
+		}
+		span := conditional.Then.Span()
+		if source[span.StartOffset:span.EndOffset] != branch {
+			t.Fatalf("expected complete branch %q: %#v", branch, conditional.Then)
+		}
 	}
 }
 

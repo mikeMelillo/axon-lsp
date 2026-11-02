@@ -21,7 +21,7 @@ See the [analysis and type reference](docs/type-intelligence.md) for validation 
 - **Go to Definition**: Navigate to local definitions and known core/external function sources
 - **Signature Help**: See function arguments while typing
 - **References**: Find function usages in the workspace
-- **Diagnostics**: Undefined functions, unresolved receivers and simple arguments, undefined reassignment targets, missing arguments, and definite argument-type mismatches
+- **Diagnostics**: Undefined functions, unresolved receivers and simple arguments, undefined reassignment targets, missing arguments, definite argument-type mismatches, and malformed logical operands
 - **Xeto Support**: Embedded Axon analysis, typed function signatures and defaults, and read-only `.xetolib` source navigation
 - **Block Navigation**: Highlight and fold matching `do`/`end`, `defcomp`/`end`, `if`/`else`, and `try`/`catch` pairs
 - **Document Structure**: Function ranges support Outline, Breadcrumbs, and VS Code Sticky Scroll
@@ -129,6 +129,20 @@ An `if` without `else` preserves the following statement boundary, including
 blank lines. A declaration such as `results: []` after
 `if(inputSpecs.isNull) inputSpecs = specs()` is retained rather than dropped
 during parser recovery. Empty and populated List literals are both supported.
+
+Declaration values may start on the next line, including `if/else` expressions
+captured by nested callbacks. Dictionaries support newlines after commas and
+trailing commas, including mixed marker/value entries such as
+`{current, phase: "A"}`. Dictionary keys are not variable reads.
+
+Malformed `and`/`or` operands, such as `if(or value.isNull)` or `if(true or)`,
+produce syntax diagnostics. Reporting is limited to one syntax diagnostic per
+line and 20 per Axon region, and respects `//lspignore`. Other parser recovery
+errors are not published; this is not complete syntax validation.
+Newlines before or after `and`/`or` continue the expression, including filter
+tag paths inside `readAll`. Such paths are filter syntax, not variable reads.
+Parenthesized `if` conditions end at their closing parenthesis, so a branch
+starting with `[]` or `[value]` is not mistaken for condition indexing.
 
 Xeto parameter types and defaults are indexed separately. For example, `opts: Dict? <axon:"null">` accepts explicit `null` and may be omitted, while `opts: Dict <axon:"null">` has an omission default but is not inferred to accept explicit `null`. Defaults are preserved as Axon source, not evaluated. Nullable parameters without explicit defaults retain the existing omission behavior. Date, Time, DateTime, and DateSpan literals are distinguished from numbers.
 

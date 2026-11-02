@@ -91,9 +91,19 @@ same interpretation or source mapping yet.
   types rather than reusing stale initializer/parameter information. The bounded
   List-invariant exception is described below.
   This is not branch- or invocation-sensitive flow analysis.
-- Parser errors are retained internally but are not published as syntax
-  diagnostics. Incomplete-arrow and multiline Trio `src:` recovery have focused
-  coverage; the AST is not a complete compiler.
+- Missing operands before/after `and` and `or` produce syntax diagnostics, capped
+  at one per line and 20 per Axon region, with normal ignored-line handling and
+  Trio/Xeto source mapping. Other parser errors remain internal: the AST is not
+  a complete compiler. Incomplete-arrow and multiline Trio `src:` recovery have
+  focused coverage.
+- Logical expressions continue across newlines before or after `and`/`or`,
+  preserving precedence and Filter argument context for trap/tag paths. An `if`
+  condition's closing parenthesis separates it from list or parenthesized
+  branches, so branch expressions do not become condition indexes or calls.
+- Declaration initializers can continue after a newline, including complete
+  `if/else` expressions whose bindings are captured by nested callbacks.
+  Dictionaries accept newlines after commas and trailing commas; mixed marker
+  and valued entries retain literal keys rather than variable reads.
 - Parenthesized lambdas recognize required/defaulted parameter mixes, including
   nested default expressions and multiline parameter lists. Parameter names enter
   the lambda's lexical scope regardless of whether a default is present. Trio

@@ -274,15 +274,20 @@ func (p *expressionParser) parseSequence(stops map[string]bool) []Expr {
 		if name, ok := expression.(*NameExpr); ok && p.at(TokenOperator, ":") {
 			colon := p.consume()
 			var value Expr
-			// Leave a statement boundary intact during recovery. This also
-			// preserves lambdas following a multiline Trio src: field.
-			if !p.atKind(TokenNewline) && !p.at(TokenEOF, "") && !p.at(TokenOperator, ";") {
+			p.skipNewlines()
+			// A following declaration or block terminator cannot be the value.
+			followingDeclaration := p.atKind(TokenIdentifier) && p.index+1 < len(p.tokens) && p.tokens[p.index+1].Text == ":"
+			if !followingDeclaration && !p.atStop(stops) && !p.at(TokenEOF, "") && !p.at(TokenOperator, ";") {
 				value = p.parseExpression(0)
 			}
 			if value != nil {
 				expression = &BinaryExpr{Left: name, Operator: ":", Right: value, Source: mergeSpan(name.Span(), value.Span())}
 			} else {
 				p.addError("expected declaration value", colon, colon)
+				if followingDeclaration || p.atStop(stops) {
+					expressions = append(expressions, expression)
+					continue
+				}
 			}
 		}
 		if expression != nil {
@@ -311,15 +316,19 @@ func (p *expressionParser) parseExpression(minPrecedence int) Expr {
 		return nil
 	}
 	for {
-		// A leading dot continues the preceding receiver across a line break.
-		// Do not recover it as a standalone call with the lambda in slot zero.
+		// Leading dots and logical operators continue the preceding expression.
+		// Leave lower-precedence operators for the enclosing expression parser.
 		if p.atKind(TokenNewline) {
 			next := p.index
 			for next < len(p.tokens) && p.tokens[next].Kind == TokenNewline {
 				next++
 			}
-			if next < len(p.tokens) && p.tokens[next].Kind == TokenOperator && p.tokens[next].Text == "." {
-				p.index = next
+			if next < len(p.tokens) {
+				token := p.tokens[next]
+				precedence, _ := binaryPrecedence(token)
+				if token.Text == "." || ((token.Text == "and" || token.Text == "or") && precedence >= minPrecedence) {
+					p.index = next
+				}
 			}
 		}
 		if p.atKind(TokenNewline) || p.at(TokenEOF, "") || p.at(TokenOperator, ";") ||
@@ -390,6 +399,13 @@ func (p *expressionParser) parseExpression(minPrecedence int) Expr {
 		if rightAssociative {
 			nextPrecedence = precedence
 		}
+		if op.Text == "and" || op.Text == "or" {
+			p.skipNewlines()
+			if p.atKind(TokenEOF) || p.at(TokenOperator, ")") || p.at(TokenOperator, "]") || p.at(TokenOperator, "}") || p.at(TokenOperator, ",") || p.at(TokenOperator, ";") {
+				p.addError("expected expression after "+op.Text, op, op)
+				return left
+			}
+		}
 		right := p.parseExpression(nextPrecedence)
 		if right == nil {
 			p.addError("expected expression after "+op.Text, op, op)
@@ -411,6 +427,10 @@ func (p *expressionParser) parsePrefix() Expr {
 		return &LiteralExpr{Kind: token.Kind, Value: token.Text, Source: start}
 	case TokenKeyword:
 		switch token.Text {
+		case "and", "or":
+			p.consume()
+			p.addError("expected expression before "+token.Text, token, token)
+			return p.parseExpression(0)
 		case "true", "false", "null", "na", "m":
 			p.consume()
 			return &LiteralExpr{Kind: TokenKeyword, Value: token.Text, Source: start}
@@ -457,7 +477,9 @@ func (p *expressionParser) parsePrefix() Expr {
 				return &LambdaExpr{Parameters: params, Body: body, Source: mergeSpan(start, body.Span())}
 			}
 			p.consume()
+			p.skipNewlines()
 			expression := p.parseExpression(0)
+			p.skipNewlines()
 			if !p.at(TokenOperator, ")") {
 				p.addError("expected ')'", p.current(), p.current())
 				return expression
@@ -608,6 +630,7 @@ func (p *expressionParser) parseMap() Expr {
 		p.skipNewlines()
 		if p.at(TokenOperator, ",") {
 			p.consume()
+			p.skipNewlines()
 			continue
 		}
 		if hadNewline {
@@ -626,7 +649,14 @@ func (p *expressionParser) parseMap() Expr {
 
 func (p *expressionParser) parseIf() Expr {
 	start := spanOf(p.consume())
-	condition := p.parseExpression(0)
+	var condition Expr
+	if p.at(TokenOperator, "(") {
+		// The closing parenthesis ends the condition; a following list or
+		// parenthesized branch must not become a postfix index or call.
+		condition = p.parsePrefix()
+	} else {
+		condition = p.parseExpression(0)
+	}
 	if condition == nil {
 		p.addError("expected if condition", p.current(), p.current())
 		return nil

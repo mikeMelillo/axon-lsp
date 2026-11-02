@@ -48,6 +48,20 @@ func TestOuterBindingsAreVisibleInNestedLambda(t *testing.T) {
 	}
 }
 
+func TestMultilineConditionalBindingIsCapturedByNestedLambda(t *testing.T) {
+	source := "racks.each(r => do\n  rackItem: {\n    navName: r,\n    aisle: 1,\n  }\n  newRack:\n    if(true) rackItem\n    else {}\n  cabinets.each(c => do\n    inner: newRack->id\n    inspect(newRack)\n  end)\n  inspect(inner)\nend)\ninspect(newRack)"
+	model := Analyze(source, nil)
+	if _, ok := model.Resolve("newRack", 11); !ok {
+		t.Fatal("multiline declaration must be captured by the inner callback")
+	}
+	if _, ok := model.Resolve("inner", 13); ok {
+		t.Fatal("inner declaration escaped its callback")
+	}
+	if _, ok := model.Resolve("newRack", 15); ok {
+		t.Fatal("outer callback declaration escaped its callback")
+	}
+}
+
 func TestInnerLambdaBindingShadowsXetoParameter(t *testing.T) {
 	model := Analyze("items.each(value => do\n  check(value)\nend)", map[string]string{"value": "Str"})
 	binding, ok := model.Resolve("value", 1)

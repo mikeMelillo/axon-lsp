@@ -131,6 +131,28 @@ func validateAt(uri string, source string, manager *index.Manager, clearReferenc
 	for _, expression := range parsed.Expressions {
 		diagnostics = append(diagnostics, validateCallsFromAST(uri, masked.Text, expression, manager, localFuncs, lineScopes, ignoredLines, warnMissingArguments)...)
 	}
+	// Only report reviewed syntax errors; general recovery also encounters Axon
+	// constructs outside this parser's supported grammar. Limit recovery noise.
+	syntaxLines := map[int]bool{}
+	for _, parseError := range parsed.Errors {
+		switch parseError.Message {
+		case "expected expression before and", "expected expression before or", "expected expression after and", "expected expression after or":
+		default:
+			continue
+		}
+		start, end := parseError.Source.Start, parseError.Source.End
+		if len(syntaxLines) >= 20 || syntaxLines[start.Line] || start.Line < 0 || start.Line >= len(ignoredLines) || ignoredLines[start.Line] {
+			continue
+		}
+		syntaxLines[start.Line] = true
+		diagnostics = append(diagnostics, index.Diagnostic{
+			Range: index.Range{
+				Start: index.Position{Line: start.Line, Character: start.Character},
+				End:   index.Position{Line: end.Line, Character: end.Character},
+			},
+			Message: "Syntax error: " + parseError.Message, Severity: 1,
+		})
+	}
 
 	for i := range diagnostics {
 		diagnostics[i].Range.Start.Line += lineOffset
